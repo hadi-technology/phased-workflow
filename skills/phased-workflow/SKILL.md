@@ -1,6 +1,6 @@
 ---
 name: phased-workflow
-version: "3.1.0"
+version: "3.2.0"
 description: "Orchestrator: plan → review → approve → implement → QA. Dispatches sub-agents for each stage. Never does the work itself. Triggers: phased-workflow, pw:, /pw"
 metadata:
   tags: workflow, orchestration, sub-agent
@@ -25,18 +25,49 @@ Trigger phrases: `phased-workflow`, `phased workflow`, `pw:`, `/pw`
 ## The Pipeline
 
 ```
-Stage 1: PLAN        → sub-agent writes the plan (phased-plan skill)
-Stage 2: REVIEW      → sub-agent reviews the plan (phased-review skill)
-         FIX         → orchestrator fixes review findings, updates plan
+Stage 0: SCOPE CHECK (optional) → clarify with user if request is vague
+Stage 1: PLAN                   → sub-agent writes the plan (phased-plan skill)
+Stage 2: REVIEW                 → sub-agent reviews the plan (phased-review skill)
+         FIX                    → orchestrator fixes review findings, updates plan
          (re-review if fixes were substantial)
-Stage 3: APPROVE     → present to user, STOP, wait for explicit approval
-Stage 4: IMPLEMENT   → sub-agent executes the plan (phased-implement skill)
-Stage 5: QA          → sub-agent verifies the work (phased-qa skill)
-         FIX         → orchestrator fixes QA findings
-         REPORT      → present final report to user
+Stage 3: APPROVE                → present to user, STOP, wait for explicit approval
+Stage 4: IMPLEMENT              → sub-agent executes the plan (phased-implement skill)
+Stage 5: QA                     → sub-agent verifies the work (phased-qa skill)
+         FIX                    → orchestrator fixes QA findings
+         REPORT                 → present final report to user
+Stage 6: FINISH (optional)      → commit / PR / merge handoff
 ```
 
-Every stage is mandatory. No shortcuts.
+Stages 1–5 are mandatory. Stages 0 and 6 are conditional and only invoked when the signals below apply. No shortcuts on the mandatory stages.
+
+---
+
+## Sub-agent status codes
+
+Every sub-agent reports back with one of these codes plus evidence. Branch on the code, not on prose interpretation. If a sub-agent's report doesn't carry one of these, ask it to commit to one before acting.
+
+| Code | Meaning | Orchestrator action |
+|------|---------|---------------------|
+| `DONE` | All objectives met, all DoD verified with evidence | Proceed to next stage |
+| `DONE_WITH_CONCERNS` | Completed, but flagged doubts (scope creep, risk, file size, observation) | Read concerns. If correctness/scope: address before proceeding. If observation: note and proceed |
+| `NEEDS_CONTEXT` | Sub-agent missing information that wasn't provided | Provide the missing context, re-dispatch the same sub-agent |
+| `BLOCKED` | Cannot complete — environment problem, fundamental gap, or unclear requirement | Assess: context gap → re-dispatch with more context. Reasoning gap → re-dispatch with more capable model. Plan wrong → handle via `PLAN_WRONG`. Environment → escalate to user |
+| `PLAN_WRONG` | The plan contains an error that prevents implementation | Stop. Update the plan. Re-dispatch the implementer for remaining phases. Note delta in final report |
+
+---
+
+## Stage 0 — Scope check (optional)
+
+Before dispatching the planner, judge whether the request is concrete enough to plan. Skip when the request is already well-formed.
+
+| Signal | Action |
+|--------|--------|
+| Clear acceptance criteria, named files or features, the user has done the thinking | Skip Stage 0, go to Stage 1 |
+| Vague ("improve X", "make Y better"), conflicting signals, unclear scope | Run a brief brainstorm with the user — clarify intent, scope, success criteria — before Stage 1 |
+| Multiple independent subsystems in one request | Tell the user. Propose splitting into separate phased-workflow runs, one per subsystem |
+| Request asks for something the user has already approved a plan for (path provided) | Skip to Stage 4 — see "Shortcut" in Stage 3 |
+
+A vague task at Stage 0 produces a vague plan at Stage 1, which produces wasted work at Stage 4. Clarify upstream — never plan around ambiguity.
 
 ---
 
@@ -69,7 +100,16 @@ If the task is large, the planner may produce multiple plan files with a `-phase
 
 ### Fix review findings
 
-Fix every finding — critical, high, medium, and low. Update the plan file.
+**Restate before fixing.** For each finding, follow this discipline (do not jump straight to a code edit):
+
+1. **Read** the finding completely without reacting.
+2. **Restate** the issue in your own words — what is the reviewer claiming, and why?
+3. **Verify** against the actual codebase — is the claim correct? If you cannot easily verify it, say so before deciding.
+4. **Decide:** if correct, apply the fix to the plan. If wrong, push back with technical reasoning — do not blindly implement.
+
+Fix every verified finding regardless of severity. Update the plan file.
+
+**Forbidden:** "You're absolutely right" / "Great point" / "Excellent feedback" / blind implementation. State the fix in the plan, not gratitude — actions on the plan show you heard the feedback.
 
 **When to re-review:** If fixes are substantial (structural changes, new phases, changed approach), dispatch the review sub-agent again. If fixes are minor (wording, constants, adding NTH notes), no re-review needed.
 
@@ -96,7 +136,7 @@ Present a concise summary and **STOP**. Include:
 
 If the caller provides feedback, update the plan and re-present. A re-review is NOT required for caller-driven changes (the caller is the reviewer at this point).
 
-**Proxy approval:** When phased-workflow is invoked by another orchestrator (e.g., builder-hassan), the calling agent acts as the approval authority on behalf of the user. The calling agent's approval is treated the same as direct user approval.
+**Proxy approval:** When phased-workflow is invoked by another orchestrator, the calling agent acts as the approval authority on behalf of the user. The calling agent's approval is treated the same as direct user approval.
 
 **Shortcut:** If the user provides a previously-approved plan file path and says to execute it (e.g., "implement plans/foo.md"), skip to Stage 4.
 
@@ -127,7 +167,16 @@ If the caller provides feedback, update the plan and re-present. A re-review is 
 
 ### Fix QA findings
 
-Fix every finding, regardless of severity. After fixing, re-run tests and type checks to verify no regressions.
+**Restate before fixing.** Same discipline as Stage 2:
+
+1. Read the finding completely.
+2. Restate it in your own words.
+3. Verify against the actual codebase — is the claim correct?
+4. Decide: fix, push back with reasoning, or escalate.
+
+Fix every verified finding, regardless of severity. After fixing, re-run tests and type checks to verify no regressions — fresh runs, not cached output.
+
+**Forbidden:** "You're absolutely right" / "Great catch" / blind implementation. State the fix, not gratitude.
 
 ### Present final report
 
@@ -137,6 +186,21 @@ This is the last output the user sees. Include:
 - QA sub-agent's original findings (all severities)
 - Fixes applied for each finding
 - Final verification results (test count, TypeScript errors, ESLint warnings)
+
+---
+
+## Stage 6 — Finish (optional)
+
+After the final report, decide on integration. Skip when the user has already taken delivery, when there's nothing to commit, or when the plan explicitly handles its own commits.
+
+| Situation | Stage 6 action |
+|-----------|---------------|
+| Uncommitted changes from the implement stage and the plan said "commit at end" | Confirm scope with the user, then commit. Use HEREDOC for the message |
+| Work is on a feature branch and the user wants integration | Offer: merge to main, open PR, or leave for review. Wait for explicit choice |
+| Work is on `main` | Stop. Work shouldn't have been on main. Flag and ask the user how to proceed |
+| The user has already said "I'll handle the commit" | Skip. Stop at the QA report |
+
+**Never** push, force-push, merge, or create a PR without explicit user approval at this stage. The QA report is a valid stopping point — ending there is the default unless the user pre-authorized the next step.
 
 ---
 
@@ -157,9 +221,38 @@ This is the last output the user sees. Include:
 
 ## Sub-Agent Dispatch Reference
 
-| Stage | Skill | What to provide | What to expect back |
-|-------|-------|----------------|-------------------|
-| 1. Plan | `phased-plan` | Task requirements, project context | Plan file path, phase summary |
-| 2. Review | `phased-review` | Plan file path | Findings with severity, go/no-go |
-| 4. Implement | `phased-implement` | Plan file path | Per-phase results, deviations, evidence |
-| 5. QA | `phased-qa` | Plan file path | Findings with severity, per-phase pass/fail |
+| Stage | Skill | What to provide | What to expect back | Valid status codes |
+|-------|-------|----------------|---------------------|--------------------|
+| 1. Plan | `phased-plan` | Task requirements, project context | Plan file path, phase summary | `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` / `BLOCKED` |
+| 2. Review | `phased-review` | Plan file path | Findings with severity, go/no-go, restated intent | `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` |
+| 4. Implement | `phased-implement` | Plan file path | Per-phase results, deviations, fresh verification evidence | `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` / `BLOCKED` / `PLAN_WRONG` |
+| 5. QA | `phased-qa` | Plan file path | Findings with severity, per-phase pass/fail, fresh verification evidence | `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` |
+
+If a sub-agent's report doesn't carry a valid status code, ask it to commit to one before acting on the report.
+
+---
+
+## Style Contract — caveman prose (applies to dispatch prompts and orchestrator artifacts)
+
+Dispatch prompts and orchestrator artifacts are operational, not narrative. Every line carries a fact.
+
+**Rules:**
+- No articles ("the", "a", "an") — drop them
+- No hedging ("might", "could", "appears", "seems", "likely", "probably") — assert or omit
+- No filler ("simply", "just", "essentially", "in order to", "successfully", "basically", "actually")
+- No transitions ("furthermore", "additionally", "moreover", "however")
+- No restatement of the prompt or task
+- Sentence fragments OK. Imperative or past-tense verbs.
+- One fact per line. No paragraphs of prose.
+- `path:line` for every claim. No prose pointers.
+- Numbers and counts beat adjectives ("3 errors" not "several errors")
+
+**Carve-outs (keep verbatim — do NOT cavemen):**
+- Verbatim contract blocks pasted into dispatch prompts (Investigation rigor, Verification Gate, Hypothesis Discipline) — paste as-written
+- Sub-agent return text — relay verbatim, do not paraphrase
+- Status codes and structured fields — exact
+
+**Self-check before submitting:**
+- Any sentence with 2+ commas → rewrite
+- Any paragraph with 3+ sentences → split into bullets, drop filler
+- Sub-agents inherit their own Style Contract from their SKILL.md — orchestrator does not need to repeat the rules in the dispatch prompt

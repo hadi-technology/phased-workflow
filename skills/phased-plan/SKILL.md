@@ -1,7 +1,7 @@
 ---
 name: phased-plan
-version: "1.1.0"
-description: "Write implementation-ready phased plans as step-by-step checklists with exact code. Maps files, defines phases with DoD, enforces cleanliness self-check. Triggers: phased-plan, /plan"
+version: "1.2.0"
+description: "Write implementation-ready phased plans as step-by-step checklists with exact code. Maps files, defines phases with DoD, enforces TDD and cleanliness self-check. Triggers: phased-plan, /plan"
 metadata:
   tags: planning, architecture, design
 ---
@@ -68,6 +68,25 @@ plans/2026-04-09-feature-name-phase-3.md   ← polish, edge cases, cleanup
 
 **When to split:** If your plan draft crosses ~500 lines, stop and restructure into multiple files. Don't finish writing a 900-line plan and split after — the decomposition is different when you plan for self-contained files from the start.
 
+#### Domain-noun rule (mandatory — applies to every phase / row)
+
+If a phase / row uses a domain noun (e.g., "main lift", "active program", "primary muscle group", "featured item", "main user", "primary route") to describe WHAT the implementation should DO, the noun MUST EITHER:
+
+(a) Map to a concrete field / type / enum value in the schema or model — cite `file:line` of the field definition, OR
+(b) Be defined inline as a one-line derivation algorithm in the form `<noun> = <derivation pseudocode>` (e.g., `main lift = item where item.orderIndex === 1 per dayType`).
+
+Phases / rows using domain nouns without (a) or (b) are rejected at scaffolding. The reason: domain nouns without a schema mapping have multiple reasonable interpretations, and the implementer will silently pick one — usually the wrong one — and only QA / user testing surfaces the divergence. Force the user-stake decision to surface NOW (during scaffolding / brainstorm batching) instead of mid-execution where Hashus would stall or ship the wrong interpretation.
+
+**Examples:**
+
+| Phrase | Status | Why |
+|---|---|---|
+| "Render main lifts list" | ❌ rejected | "main lift" is not a schema field |
+| "Render `programDay.lifts.filter(l => l.isMain)`" | ✅ ok — uses `isMain` from `programSchema.ts:128` | (a) — schema-cited |
+| "Render the main lift per day, defined as `lifts.find(l => l.orderIndex === 1)`" | ✅ ok — derivation is explicit | (b) — algorithm-defined |
+| "Highlight the active program" | ❌ rejected | "active" is ambiguous (current vs most-recent vs subscribed) |
+| "Highlight `program where program.id === store.activeProgramId`" | ✅ ok | (a) — schema-cited |
+
 #### Plan header (required on every plan)
 
 ```markdown
@@ -108,7 +127,21 @@ Each phase is a checklist of bite-sized steps an agent can follow without guessi
 
 ### Steps
 
-- [ ] **Step 1: [Action in 2–5 minutes]**
+**TDD requirement:** When the phase introduces or changes user-observable behavior (a new function, a new endpoint, a state transition, a bug fix), the first step is a failing test, then run-to-fail, then minimal implementation, then run-to-pass. Skip TDD only for non-behavioral phases (formatting, type-only changes, dependency upgrades, dead-code deletion) and document why in the phase Objective.
+
+- [ ] **Step 1 (TDD): Write the failing test**
+
+  ```ts
+  // exact test file path
+  // the actual test code — complete, copy-pasteable, asserts the new behavior
+  ```
+
+- [ ] **Step 2 (TDD): Run the test — confirm it fails for the right reason**
+
+  Run: `cd <working directory> && <test command>`
+  Expected: FAIL with `<exact expected message>` (e.g., "function not defined" or assertion mismatch). A test that fails for the wrong reason is not a valid red.
+
+- [ ] **Step 3: [Implementation action in 2–5 minutes]**
 
   [One-sentence intent.]
 
@@ -117,16 +150,25 @@ Each phase is a checklist of bite-sized steps an agent can follow without guessi
   // the actual code change — copy-pasteable, complete, production-ready
   ```
 
-- [ ] **Step 2: Verify the change compiles**
+- [ ] **Step 4 (TDD): Run the test — confirm it now passes**
 
-  Run: `cd <working directory> && npx tsc --noEmit`
-  Expected: exit 0, zero errors in the touched files.
+  Run: `cd <working directory> && <test command>`
+  Expected: PASS
 
-- [ ] **Step 3: [Next action]**
+- [ ] **Step 5: Verify the change compiles**
 
-  ```tsx
-  // exact code
+  Run: `cd <working directory> && <project's typecheck command>`  (e.g. `npx tsc --noEmit`, `pnpm typecheck`, `cargo check`, `mypy .` — use the command the project's instructions / `package.json` scripts / Makefile specify)
+  Expected: exit 0, zero errors in the touched files. Skip this step if the project has no typecheck command.
+
+- [ ] **Step 6 (bug-fix only): Verify red-green for the regression test**
+
+  ```bash
+  cd <working directory> && git stash    # revert the fix
+  <test command>                          # Expected: FAIL — proves the test is a regression test
+  cd <working directory> && git stash pop # restore the fix
+  <test command>                          # Expected: PASS
   ```
+  Skip this step only if the phase is not a bug fix.
 
 - [ ] **Step N: Commit**
 
@@ -140,16 +182,19 @@ Each phase is a checklist of bite-sized steps an agent can follow without guessi
 - [specific, testable outcome]
 - [specific, testable outcome]
 
-**Code DoD** — mechanical verification commands (every one must be runnable and produce a checkable result):
+**Code DoD** — mechanical verification commands (every one must be runnable and produce a checkable result; substitute the project's actual typecheck / test / lint commands):
 
 ```bash
-cd <working directory> && npx tsc --noEmit
-cd <working directory> && grep -n "<pattern>" <file>   # expected: N matches / 0 matches
-cd <working directory> && git grep -n "TODO:\|DEFERRED:" <touched files>   # expected: 0
+cd <working directory> && <project typecheck>                           # e.g. npx tsc --noEmit / pnpm typecheck / cargo check / mypy .
+cd <working directory> && grep -n "<pattern>" <file>                    # expected: N matches / 0 matches
+cd <working directory> && git grep -n "TODO:" <touched files>           # expected: 0
+# If the project uses a separate post-release backlog marker (e.g. // DEFERRED:), keep it out of the prohibited grep.
 ```
 
 **Cleanliness self-check** — the implementer must confirm all of these before marking the phase done:
-- [ ] No raw numbers/hex/strings where a theme token, constant, or config value exists
+- [ ] **TDD followed for behavioral changes** — the failing test was written and confirmed red before the implementation. If TDD was skipped, the phase Objective documents a non-behavioral reason
+- [ ] **Regression test red-green verified** (bug-fix phases only) — `git stash` → run → FAIL → restore → run → PASS evidence is recorded
+- [ ] No raw numbers/hex/strings where a design token, constant, or config value exists in this codebase
 - [ ] No duplicated logic — every helper/component/hook I introduced was checked against existing exports first
 - [ ] Naming matches the 2–3 nearest peer examples
 - [ ] No new file created when an existing file could house the change cleanly
@@ -170,8 +215,11 @@ cd <working directory> && git grep -n "TODO:\|DEFERRED:" <touched files>   # exp
 | Shell commands without working directory | May run from wrong location |
 | Type casts without tracing the type definition | May hide type errors |
 | Numeric constants asserted without a source citation | Asserted without evidence |
-| Raw hex colors / raw spacing numbers / raw durations | Should be theme tokens |
+| Raw hex colors / raw spacing numbers / raw durations | Should be design tokens / constants if the project centralizes them |
 | "Create a new helper for X" without checking whether one exists | Duplicated logic |
+| "Implement function" first when behavior is testable (no prior failing test step) | TDD discipline missing — implementer may write the wrong thing or skip the test |
+| Bug-fix step without `git stash → fail → restore → pass` regression evidence | Regression test was never proven red — it's not actually a regression test |
+| Test code shown as a separate "Files changed" entry but not as a Step's actual code | Implementer will skip writing the test or write the wrong one |
 
 #### Plan-wide sections (append after the last phase)
 
@@ -211,6 +259,39 @@ Return the plan file path and a concise summary:
 
 ---
 
+## Disk-first mode
+
+When the dispatch prompt provides a `report-target=<path>` directive (or any equivalent — e.g., "Disk report path: ...", "write your full report to ..."), the **handoff summary above describes the report on disk**, not the return message. The plan file (or CSV in `csv-backlog` mode) is always written to its own path on disk regardless of mode — disk-first only redirects the Step 5 handoff summary.
+
+**Behavior in disk-first mode:**
+
+1. Write the plan / CSV to its target path as usual (no change to Step 1–4 of the workflow).
+
+2. Write the handoff summary to `<report-target>` using the Write tool. The summary must contain everything Step 5 above describes (phase list with objectives, risks, NTH items) plus, for `csv-backlog` mode: row count by grouping, decisions deferred to user (if any), files searched during codebase mapping. The disk report is the source of truth.
+
+3. Your final return message contains ONLY:
+
+   ```
+   STATUS=DONE
+   plan=<plan-or-csv-path>
+   report=<report-target>
+   tldr: <≤200 token summary — phases produced or row count, key risks pointer>
+   ```
+
+   For `BLOCKED` / `PLAN_WRONG` / `NEEDS_CONTEXT`, include one extra line:
+
+   ```
+   blocked: <one-line cause>
+   ```
+
+4. Returning more than ~300 tokens of inline text is a contract violation. The plan file is the artifact, the disk report is the meta-description, the return message is just the index. The orchestrator (Zayneb or another caller) has its own context to protect.
+
+**Verifying disk-first mode is in effect:** if the dispatch prompt mentions a `report-target` path or instructs you to write a summary report to a specific file, you are in disk-first mode. The orchestrator checks `test -s <path>` after your return — an empty or missing file is treated as `BLOCKED` regardless of your status code.
+
+**When disk-first mode is NOT in effect** (no `report-target` directive): use the inline format described in Step 5 — Handoff. This is the default for direct user invocations of `/plan`.
+
+---
+
 ## Red Flags — Plan Smells
 
 | Smell | What it means |
@@ -222,6 +303,50 @@ Return the plan file path and a concise summary:
 | Phase missing the "Cleanliness self-check" block | Implementer will skip it — add the block |
 | Multiple phases modify the same file | Ordering matters — document the dependency |
 | A step says what to do but shows no code | Implementer will have to invent it — show the code |
-| Raw numbers / hex / spacing values in code snippets | Should be theme tokens or constants |
+| Raw numbers / hex / spacing values in code snippets | Should be design tokens / constants if the project centralizes them |
 | "Files changed" doesn't include test files for interface changes | Tests will break mid-implementation |
 | NTH section is empty after scanning ±20 lines | Scanning was probably skipped |
+
+---
+
+## Style Contract — caveman prose
+
+Plans are operational artifacts, not essays. Prose around code carries facts, not narrative. This contract applies to all prose in plan files, inline reports, and tldrs.
+
+**Rules:**
+- No articles ("the", "a", "an") — drop them
+- No hedging ("might", "could", "appears", "seems", "likely", "probably") — assert or omit
+- No filler ("simply", "just", "essentially", "in order to", "successfully", "basically", "actually")
+- No transitions ("furthermore", "additionally", "moreover", "however")
+- No restatement of the prompt or task
+- Sentence fragments OK. Imperative or past-tense verbs.
+- One fact per line. No paragraphs of prose.
+- `path:line` for every claim. No prose pointers.
+- Numbers and counts beat adjectives ("3 errors" not "several errors")
+
+**Carve-outs (keep verbatim — do NOT cavemen):**
+- Code blocks for steps — verbatim, idiomatic, with comments only when WHY is non-obvious
+- DoD command snippets and expected output — exact
+- Test code — exact, runnable
+- Diff snippets quoted as evidence — verbatim
+
+**Examples:**
+
+BAD (verbose):
+> This phase will add a new product to the catalog service by extending the existing product registry array. The implementation should follow the existing pattern used by other products.
+
+GOOD (caveman):
+> Add product to registry. catalogConfig.ts:47.
+> Pattern: `addProduct({ id, name, price })`. Match existing entries.
+
+BAD (verbose):
+> The acceptance criterion can be verified by running a grep command against the file to confirm the new product is present in the registry.
+
+GOOD (caveman):
+> DoD: `grep "newProduct" src/catalogConfig.ts` returns hit.
+
+**Self-check before submitting:**
+- Any sentence with 2+ commas → rewrite
+- Any sentence containing "the/a/an" twice → rewrite
+- Any paragraph with 3+ sentences → split into bullets, drop filler
+- Any 5-line section where you can't point to which lines carry NEW facts → half is fluff, cut it
