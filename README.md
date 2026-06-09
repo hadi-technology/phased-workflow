@@ -1,8 +1,22 @@
 # HADI Phased Workflow
 
-A set of [Claude Code](https://claude.ai/claude-code) skills that enforce a structured development workflow with sub-agent QA at every stage. Built on top of [Superpowers](https://github.com/anthropics/superpowers) for higher quality skill instructions and agent outputs.
+A set of [Claude Code](https://claude.ai/claude-code) skills that enforce a structured, multi-agent development workflow — built to deliver high-quality, reliable outputs without burning through your token budget.
 
 Each stage runs as a separate sub-agent with fresh context. Sub-agents spawn their own sub-agents for verification throughout the process — the planner self-checks before handoff, the reviewer verifies claims against the actual codebase, the implementer runs DoD checks per phase. The final QA stage is a dedicated gate that requires all findings to be remediated before the workflow is considered complete.
+
+## Quality and Cost
+
+These skills were designed around one constraint: **Opus where it matters, Sonnet everywhere else.**
+
+Most agent work is mechanical — reading files, running greps, following a plan, writing code to a spec. Sonnet handles all of that. Opus is reserved for the moments where independent design judgment actually changes the outcome: the fresh-eyes review pass that catches what the first reviewer rationalized, the wave-level QA that spots cross-task integration issues, the fix-loop escalation after a first round fails to converge.
+
+A few concrete examples of how cost is controlled without sacrificing quality:
+
+- **Model selection is mechanical, not per-row.** Implementation always runs on Sonnet. Opus fires at specific gates (Pass 2 review, wave QA, final QA, fix-loop Round 2). No per-task "this feels complex, use Opus" leakage.
+- **QA tiering cuts dispatch cost on low-risk work.** Rows are classified `standard` or `critical` based on investigation signals (systemic blast radius, schema changes, data-layer involvement, P0 priority). Standard rows skip per-task QA entirely — wave QA absorbs their verification. Critical rows get belt-and-suspenders (per-task QA + independent wave re-verification). The result: the per-task QA budget is spent where it actually reduces risk, not uniformly across every row.
+- **Whole-system checks collapse to once per wave.** TypeScript, tests, and lint run once after all wave commits land — not once per task. On a 17-task wave, that's one `tsc` run instead of seventeen.
+- **Disk-first subagent reports keep context lean.** Every subagent writes its full report to disk and returns only a short status line (≤300 tokens). This prevents cache-write thrash across long runs — on a 50+ row backlog the difference is the run fitting in one session vs not.
+- **Two review passes, not three.** The plan goes through two independent review passes (Sonnet for mechanical verification, Opus for fresh-eyes judgment). After that, it ships to execution. A third pass has steeply diminishing returns; the right fix for a review miss is stronger upstream investigation, not more review cycles.
 
 ## How It Works
 
