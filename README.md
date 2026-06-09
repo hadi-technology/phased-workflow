@@ -6,6 +6,8 @@ Each stage runs as a separate sub-agent with fresh context. Sub-agents spawn the
 
 ## How It Works
 
+### Single-task pipeline (`phased-workflow`)
+
 ```
 PLAN ──▶ REVIEW ──▶ APPROVE ──▶ IMPLEMENT ──▶ QA ──▶ REMEDIATE
  │          │          │            │           │        │
@@ -29,13 +31,37 @@ PLAN ──▶ REVIEW ──▶ APPROVE ──▶ IMPLEMENT ──▶ QA ──�
                      └─────────┘
 ```
 
+### Backlog pipeline (`hadi-planner` → `hadi-builder`)
+
+For larger features that span multiple tasks, use the two-stage backlog pipeline:
+
+```
+hadi-planner                            hadi-builder
+────────────────────────────────────    ──────────────────────────────────────
+Brainstorm ──▶ Investigate codebase     Read CSV ──▶ Plan waves
+     │              │                        │
+     ▼              ▼                        ▼
+Scaffold CSV ──▶ Review ×2   ──────▶   Wave N: parallel implement + QA
+(phased-plan)  (pass 1: Sonnet         per task ──▶ wave QA ──▶ commit
+                pass 2: Opus)               │
+     │                                      ▼  (repeat per wave)
+     ▼                                      │
+Lock decisions ──▶ User approves       Final QA ──▶ End-of-run report
+                        │                   │
+                        └── CSV handed ─────┘
+                            to hadi-builder       ▼
+                                            Push gate (one approval)
+```
+
+`hadi-planner` scopes and decomposes the work into an investigated, decision-locked CSV backlog. `hadi-builder` executes it autonomously — dispatching parallel subagents per wave, committing each wave, and asking for a single push approval at the end.
+
 Each stage uses a different agent. The planner doesn't review its own plan. The implementer doesn't QA its own code. QA findings are not optional — every finding is remediated before the workflow completes.
 
 ## Installation
 
 ```bash
-git clone https://github.com/hadi-technology/hadi-phased-workflow.git
-cp -r hadi-phased-workflow/skills/* ~/.claude/skills/
+git clone https://github.com/hadi-technology/phased-workflow.git
+cp -r phased-workflow/skills/* ~/.claude/skills/
 ```
 
 ## Usage
@@ -52,11 +78,13 @@ You can also run individual stages:
 
 | Skill | Trigger | What it does |
 |-------|---------|--------------|
-| [phased-workflow](docs/skills/phased-workflow.md) | `/pw`, `pw:` | Runs the full pipeline |
+| [phased-workflow](docs/skills/phased-workflow.md) | `/pw`, `pw:` | Runs the full single-task pipeline |
 | [phased-plan](docs/skills/phased-plan.md) | `/plan` | Writes an implementation plan |
 | [phased-review](docs/skills/phased-review.md) | `/prv` | Reviews a plan against the codebase |
 | [phased-implement](docs/skills/phased-implement.md) | `/implement` | Executes an approved plan |
 | [phased-qa](docs/skills/phased-qa.md) | `/pqa` | Verifies completed work against the plan |
+| hadi-planner | `/hadi-planner` | Scopes a feature into an investigated, decision-locked CSV backlog |
+| hadi-builder | `/hadi-builder` | Executes a CSV backlog autonomously via parallel wave subagents |
 
 ## Key Concepts
 
