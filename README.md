@@ -85,6 +85,7 @@ You can also run individual stages:
 | [phased-qa](docs/skills/phased-qa.md) | `/pqa` | Verifies completed work against the plan |
 | hadi-planner | `/hadi-planner` | Scopes a feature into an investigated, decision-locked CSV backlog |
 | hadi-builder | `/hadi-builder` | Executes a CSV backlog autonomously via parallel wave subagents |
+| hadi-bugfix | `/hadi-bugfix` | Investigate-first bugfix workflow: root cause → report → approve → fix → verify |
 
 ## Key Concepts
 
