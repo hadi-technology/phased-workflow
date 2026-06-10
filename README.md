@@ -8,7 +8,9 @@ HADI is built around a different idea: **orchestrate a team of specialized agent
 
 ### Watch the 60-second overview
 
-[![HADI — AI Orchestration Tools (watch on YouTube)](https://img.youtube.com/vi/IPJmrc97LTI/maxresdefault.jpg)](https://youtu.be/IPJmrc97LTI)
+https://github.com/hadi-technology/phased-workflow/releases/download/v1.0/hadi-phased-workflow-overview-1080p.mp4
+
+▶️ **[Watch in 4K on YouTube](https://youtu.be/IPJmrc97LTI)**
 
 ---
 
