@@ -6,6 +6,10 @@ Most AI coding agents start typing immediately. No plan, no independent review, 
 
 HADI is built around a different idea: **orchestrate a team of specialized agents, make it structurally hard to deviate from intent, and only spend on the expensive model where judgment actually changes the outcome.**
 
+### Watch the 60-second overview
+
+[![HADI — AI Orchestration Tools (watch on YouTube)](https://img.youtube.com/vi/kJf65AYY4JU/maxresdefault.jpg)](https://youtu.be/kJf65AYY4JU)
+
 ---
 
 ## Why HADI is different
