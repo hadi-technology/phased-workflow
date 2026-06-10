@@ -10,8 +10,8 @@
 Clone the repo and copy the skills into your Claude Code configuration:
 
 ```bash
-git clone https://github.com/hadi-technology/hadi-phased-workflow.git
-cp -r hadi-phased-workflow/skills/* ~/.claude/skills/
+git clone https://github.com/hadi-technology/phased-workflow.git
+cp -r phased-workflow/skills/* ~/.claude/skills/
 ```
 
 Verify the skills are installed:

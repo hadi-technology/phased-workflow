@@ -1,0 +1,3 @@
+# Local-only working directories (not part of the published skills repo)
+video/
+.claude/
