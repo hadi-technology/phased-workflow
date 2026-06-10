@@ -8,7 +8,7 @@ HADI is built around a different idea: **orchestrate a team of specialized agent
 
 ### Watch the 60-second overview
 
-[![HADI — AI Orchestration Tools (watch on YouTube)](https://img.youtube.com/vi/_Q_gpRe3pFU/hqdefault.jpg)](https://youtu.be/_Q_gpRe3pFU)
+[![HADI — AI Orchestration Tools (watch on YouTube)](https://img.youtube.com/vi/IPJmrc97LTI/maxresdefault.jpg)](https://youtu.be/IPJmrc97LTI)
 
 ---
 
