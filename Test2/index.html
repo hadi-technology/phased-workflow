@@ -281,6 +281,40 @@
 
       // --- exit world space ---
       ctx.restore();
+
+      // --- HUD (screen-space — reset camera transform first) ---
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+      const speed = Math.round(Math.sqrt(car.vx * car.vx + car.vy * car.vy));
+      const isThrottle  = !!(keys['KeyW'] || keys['ArrowUp']);
+      const isBrake     = !!(keys['KeyS'] || keys['ArrowDown']);
+      const isHandbrake = car.handbrake;
+      const isLeft      = !!(keys['KeyA'] || keys['ArrowLeft']);
+      const isRight     = !!(keys['KeyD'] || keys['ArrowRight']);
+
+      // HUD background panel
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(10, 10, 200, 130);
+
+      ctx.font = 'bold 18px monospace';
+      ctx.textAlign = 'left';
+
+      // Speed
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillText(`Speed: ${speed}`, 20, 34);
+
+      // Input state indicators
+      ctx.font = '14px monospace';
+      ctx.fillStyle = isThrottle  ? '#2ecc71' : '#555';  ctx.fillText('▲ THROTTLE', 20, 56);
+      ctx.fillStyle = isBrake     ? '#e74c3c' : '#555';  ctx.fillText('▼ BRAKE/REV', 20, 74);
+      ctx.fillStyle = isHandbrake ? '#f39c12' : '#555';  ctx.fillText('◼ HANDBRAKE', 20, 92);
+      ctx.fillStyle = (isLeft || isRight) ? '#3498db' : '#555';
+      ctx.fillText(`${isLeft ? '◄' : ' '} STEER ${isRight ? '►' : ' '}`, 20, 110);
+
+      // Controls legend
+      ctx.fillStyle = '#888';
+      ctx.font = '11px monospace';
+      ctx.fillText('WASD / Arrows · Space · R=Reset', 20, 130);
     }
 
     // ============================================================
