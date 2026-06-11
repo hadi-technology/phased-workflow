@@ -42,6 +42,7 @@
     const SKID_THRESHOLD    = 80;    // lateral speed (px/s) above which skid marks appear
     const SKID_MAX          = 300;   // lateral speed (px/s) at which skid marks reach max opacity
     const MAX_DT            = 0.033; // dt cap (s) — clamps slow frames; 1/30 ≈ 0.033
+    const BRAKE_MULTIPLIER  = 1.5;   // brake force relative to ACCEL (braking is stronger than accelerating)
 
     // ============================================================
     // CANVAS SETUP
@@ -72,11 +73,85 @@
     };
 
     // ============================================================
-    // STUB FUNCTIONS — filled by downstream rows
+    // INPUT STATE — held-key map (populated by CAR-4 event listeners)
+    // ============================================================
+
+    const keys = {};
+
+    // ============================================================
+    // PHYSICS UPDATE
     // ============================================================
 
     function update(dt) {
-      // game logic — implemented in later rows
+      // --- inputs (keys populated by CAR-4; stubs for now so we can test physics manually) ---
+      const throttle   = (keys['KeyW'] || keys['ArrowUp'])    ? 1 : 0;
+      const brake      = (keys['KeyS'] || keys['ArrowDown'])  ? 1 : 0;
+      const steerInput = ((keys['KeyD'] || keys['ArrowRight']) ? 1 : 0)
+                       - ((keys['KeyA'] || keys['ArrowLeft'])  ? 1 : 0);
+      car.handbrake = !!(keys['Space']);
+
+      // --- heading and velocity vectors ---
+      const cosH = Math.cos(car.heading);
+      const sinH = Math.sin(car.heading);
+
+      // project velocity onto forward axis (lateral decomposition done later for GRIP)
+      const forwardVel = car.vx * cosH + car.vy * sinH;
+
+      // throttle / brake / reverse along heading
+      if (throttle) {
+        car.vx += cosH * ACCEL * dt;
+        car.vy += sinH * ACCEL * dt;
+      }
+      if (brake) {
+        if (forwardVel > 0) {
+          // braking
+          car.vx -= cosH * ACCEL * dt * BRAKE_MULTIPLIER;
+          car.vy -= sinH * ACCEL * dt * BRAKE_MULTIPLIER;
+        } else {
+          // reversing
+          car.vx -= cosH * REVERSE_ACCEL * dt;
+          car.vy -= sinH * REVERSE_ACCEL * dt;
+        }
+      }
+
+      // friction (drag) when coasting
+      car.vx *= FRICTION;
+      car.vy *= FRICTION;
+
+      // recompute forward/lateral after thrust+friction
+      const fv2 = car.vx * cosH + car.vy * sinH;
+      const lv2 = -car.vx * sinH + car.vy * cosH;
+
+      // lateral grip (drift): partially kill lateral velocity each frame
+      const effectiveGrip = car.handbrake ? HANDBRAKE_GRIP : GRIP;
+      const newLateral = lv2 * Math.max(0, 1 - effectiveGrip);  // [M1] clamp >=0
+
+      // expose lateral slip for skid marks (CAR-6)
+      car.lateralSlip = Math.abs(lv2);
+
+      // reconstruct velocity from forward + damped lateral
+      car.vx = fv2 * cosH - newLateral * sinH;
+      car.vy = fv2 * sinH + newLateral * cosH;
+
+      // speed clamp
+      const speed = Math.sqrt(car.vx * car.vx + car.vy * car.vy);
+      const maxSpeed = fv2 >= 0 ? TOP_SPEED : TOP_REVERSE_SPEED;
+      if (speed > maxSpeed) {
+        const scale = maxSpeed / speed;
+        car.vx *= scale;
+        car.vy *= scale;
+      }
+
+      // steering: speed-scaled, inverts in reverse (sign(fv2)), ~0 at rest
+      if (Math.abs(speed) > 1) {
+        const speedFactor = Math.min(speed / TOP_SPEED, 1);
+        const reverseSign = fv2 >= 0 ? 1 : -1;
+        car.heading += STEER_RATE * steerInput * speedFactor * reverseSign * dt;
+      }
+
+      // update position
+      car.x += car.vx * dt;
+      car.y += car.vy * dt;
     }
 
     function draw() {
@@ -108,12 +183,16 @@
       }
       ctx.stroke();
 
-      // PLACEHOLDER CAR — replaced by CAR-3
+      // --- car draw (physics car — CAR-3) ---
       ctx.save();
       ctx.translate(car.x, car.y);
       ctx.rotate(car.heading);
+      // body
       ctx.fillStyle = '#e74c3c';
       ctx.fillRect(-20, -10, 40, 20);
+      // front indicator (darker stripe at forward end)
+      ctx.fillStyle = '#922b21';
+      ctx.fillRect(10, -10, 10, 20);
       ctx.restore();
 
       // --- exit world space ---
