@@ -58,6 +58,20 @@
     window.addEventListener('resize', resize);
 
     // ============================================================
+    // GAME STATE — car object (physics implemented by CAR-3)
+    // ============================================================
+
+    const car = {
+      x: ARENA_SIZE / 2,
+      y: ARENA_SIZE / 2,
+      vx: 0,
+      vy: 0,
+      heading: 0,
+      handbrake: false,
+      lateralSlip: 0
+    };
+
+    // ============================================================
     // STUB FUNCTIONS — filled by downstream rows
     // ============================================================
 
@@ -66,7 +80,44 @@
     }
 
     function draw() {
-      // render — implemented in later rows
+      // --- camera transform: car stays at screen center ---
+      const cameraX = car.x - canvas.width  / 2;
+      const cameraY = car.y - canvas.height / 2;
+
+      ctx.save();
+      ctx.translate(-cameraX, -cameraY);
+
+      // --- background (world-space fill across visible viewport) ---
+      ctx.fillStyle = '#1a1a2e';
+      ctx.fillRect(cameraX, cameraY, canvas.width, canvas.height);
+
+      // --- tiled grid (world-space, modulo-offset to cover viewport only) ---
+      const startX = cameraX - (cameraX % GRID_SIZE + GRID_SIZE) % GRID_SIZE;
+      const startY = cameraY - (cameraY % GRID_SIZE + GRID_SIZE) % GRID_SIZE;
+
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth   = 1;
+      ctx.beginPath();
+      for (let x = startX; x <= cameraX + canvas.width + GRID_SIZE; x += GRID_SIZE) {
+        ctx.moveTo(x, cameraY);
+        ctx.lineTo(x, cameraY + canvas.height);
+      }
+      for (let y = startY; y <= cameraY + canvas.height + GRID_SIZE; y += GRID_SIZE) {
+        ctx.moveTo(cameraX,                  y);
+        ctx.lineTo(cameraX + canvas.width,   y);
+      }
+      ctx.stroke();
+
+      // PLACEHOLDER CAR — replaced by CAR-3
+      ctx.save();
+      ctx.translate(car.x, car.y);
+      ctx.rotate(car.heading);
+      ctx.fillStyle = '#e74c3c';
+      ctx.fillRect(-20, -10, 40, 20);
+      ctx.restore();
+
+      // --- exit world space ---
+      ctx.restore();
     }
 
     // ============================================================
