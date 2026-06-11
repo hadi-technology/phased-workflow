@@ -197,6 +197,23 @@
           }
         }
       }
+
+      // --- skid marks recording ---
+      const skidSpeed = Math.sqrt(car.vx * car.vx + car.vy * car.vy);
+      const isSkidding = (car.lateralSlip > SKID_THRESHOLD) || (car.handbrake && skidSpeed > 20);
+      if (isSkidding) {
+        const cH = Math.cos(car.heading);
+        const sH = Math.sin(car.heading);
+        // rear corners of car (offset 15px behind center, 9px each side)
+        const rx = car.x - cH * 15;
+        const ry = car.y - sH * 15;
+        skidMarks.push({
+          x1: rx - sH * 9, y1: ry + cH * 9,
+          x2: rx + sH * 9, y2: ry - cH * 9,
+          alpha: Math.min(1, car.lateralSlip / SKID_MAX)
+        });
+        if (skidMarks.length > SKID_MAX) skidMarks.shift();
+      }
     }
 
     function draw() {
@@ -227,6 +244,17 @@
         ctx.lineTo(cameraX + canvas.width,   y);
       }
       ctx.stroke();
+
+      // --- skid marks (world-space, under obstacles and car) ---
+      ctx.lineCap = 'round';
+      ctx.lineWidth = 4;
+      for (const s of skidMarks) {
+        ctx.strokeStyle = `rgba(0,0,0,${s.alpha * 0.6})`;
+        ctx.beginPath();
+        ctx.moveTo(s.x1, s.y1);
+        ctx.lineTo(s.x2, s.y2);
+        ctx.stroke();
+      }
 
       // --- obstacles ---
       ctx.fillStyle = '#8e44ad';
@@ -274,6 +302,11 @@
     }
 
     requestAnimationFrame(loop);
+
+    // ============================================================
+    // SKID MARKS — world-space segments rendered under the car
+    // ============================================================
+    const skidMarks = [];  // each entry: { x1, y1, x2, y2, alpha }
 
     // ============================================================
     // INPUT EVENT LISTENERS — CAR-4
