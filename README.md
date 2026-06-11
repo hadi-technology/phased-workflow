@@ -1,3 +1,7 @@
+
+
+https://github.com/user-attachments/assets/55303683-a17d-42cd-8a8a-0da91e673343
+
 # HADI Phased Workflow
 
 **A set of [Claude Code](https://claude.ai/claude-code) skills that turn a feature request into a machine-verifiable CSV backlog — then execute it autonomously, with the right model on the right job, so the work ships correctly the first time.**
