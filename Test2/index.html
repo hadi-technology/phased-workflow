@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Top-Down Car Demo</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #111;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <script>
+    // ============================================================
+    // TUNABLES — single source of truth for all gameplay constants
+    // Downstream rows must NOT add new tunables outside this block.
+    // ============================================================
+
+    const ACCEL             = 400;   // forward acceleration (px/s²)
+    const REVERSE_ACCEL     = 200;   // reverse acceleration (px/s²)
+    const TOP_SPEED         = 600;   // max forward speed (px/s)
+    const TOP_REVERSE_SPEED = 250;   // max reverse speed (px/s)
+    const FRICTION          = 0.92;  // per-frame speed retention (0–1); applied as speed *= FRICTION each frame
+    const STEER_RATE        = 2.5;   // steering angular velocity (rad/s)
+    const GRIP              = 0.85;  // lateral grip blend factor (0–1)
+                                     // INVARIANT: GRIP * MAX_DT < 1 (0.85 * 0.033 = 0.028 — safe)
+    const HANDBRAKE_GRIP    = 0.05;  // grip while handbrake held (allows sliding)
+    const OBSTACLE_COUNT    = 10;    // number of obstacles in arena
+    const ARENA_SIZE        = 3000;  // arena width/height (px)
+    const RESTITUTION       = 0.6;   // collision bounce factor (not WALL_BOUNCE — locked name)
+    const GRID_SIZE         = 100;   // spatial-hash cell size (px) for broad-phase collision
+    const SKID_THRESHOLD    = 80;    // lateral speed (px/s) above which skid marks appear
+    const SKID_MAX          = 300;   // lateral speed (px/s) at which skid marks reach max opacity
+    const MAX_DT            = 0.033; // dt cap (s) — clamps slow frames; 1/30 ≈ 0.033
+
+    // ============================================================
+    // CANVAS SETUP
+    // ============================================================
+
+    const canvas = document.getElementById('canvas');
+    const ctx    = canvas.getContext('2d');
+
+    function resize() {
+      canvas.width  = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    // ============================================================
+    // STUB FUNCTIONS — filled by downstream rows
+    // ============================================================
+
+    function update(dt) {
+      // game logic — implemented in later rows
+    }
+
+    function draw() {
+      // render — implemented in later rows
+    }
+
+    // ============================================================
+    // GAME LOOP
+    // ============================================================
+
+    let last = null;
+
+    function loop(now) {
+      if (last === null) last = now;
+      const dt = Math.min(MAX_DT, (now - last) / 1000);
+      last = now;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      update(dt);
+      draw();
+
+      requestAnimationFrame(loop);
+    }
+
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
