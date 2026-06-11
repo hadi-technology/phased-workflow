@@ -43,6 +43,8 @@
     const SKID_MAX          = 300;   // lateral speed (px/s) at which skid marks reach max opacity
     const MAX_DT            = 0.033; // dt cap (s) — clamps slow frames; 1/30 ≈ 0.033
     const BRAKE_MULTIPLIER  = 1.5;   // brake force relative to ACCEL (braking is stronger than accelerating)
+    const CAR_RADIUS        = 18;    // approximate car collision radius (px)
+    const OBS_RADIUS_T      = 30;    // obstacle circle radius (px)
 
     // ============================================================
     // CANVAS SETUP
@@ -77,6 +79,22 @@
     // ============================================================
 
     const keys = {};
+
+    // ============================================================
+    // OBSTACLES — static circles scattered across arena
+    // ============================================================
+    const obstacles = [];
+    (function spawnObstacles() {
+      const MIN_DIST_FROM_CENTER = 200; // keep spawn zone clear
+      while (obstacles.length < OBSTACLE_COUNT) {
+        const x = OBS_RADIUS_T + Math.random() * (ARENA_SIZE - OBS_RADIUS_T * 2);
+        const y = OBS_RADIUS_T + Math.random() * (ARENA_SIZE - OBS_RADIUS_T * 2);
+        const dx = x - ARENA_SIZE / 2, dy = y - ARENA_SIZE / 2;
+        if (Math.sqrt(dx*dx + dy*dy) > MIN_DIST_FROM_CENTER) {
+          obstacles.push({ x, y, r: OBS_RADIUS_T });
+        }
+      }
+    })();
 
     // ============================================================
     // PHYSICS UPDATE
@@ -152,6 +170,33 @@
       // update position
       car.x += car.vx * dt;
       car.y += car.vy * dt;
+
+      // --- wall bounce ---
+      if (car.x - CAR_RADIUS < 0) { car.x = CAR_RADIUS; car.vx *= -RESTITUTION; }
+      if (car.x + CAR_RADIUS > ARENA_SIZE) { car.x = ARENA_SIZE - CAR_RADIUS; car.vx *= -RESTITUTION; }
+      if (car.y - CAR_RADIUS < 0) { car.y = CAR_RADIUS; car.vy *= -RESTITUTION; }
+      if (car.y + CAR_RADIUS > ARENA_SIZE) { car.y = ARENA_SIZE - CAR_RADIUS; car.vy *= -RESTITUTION; }
+
+      // --- obstacle circle collisions ---
+      for (const obs of obstacles) {
+        const dx = car.x - obs.x;
+        const dy = car.y - obs.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        const minDist = CAR_RADIUS + obs.r;
+        if (dist < minDist && dist > 0) {
+          // push out
+          const nx = dx / dist, ny = dy / dist;
+          const overlap = minDist - dist;
+          car.x += nx * overlap;
+          car.y += ny * overlap;
+          // reflect velocity along normal, scaled by RESTITUTION
+          const dot = car.vx * nx + car.vy * ny;
+          if (dot < 0) { // only reflect if moving towards obstacle
+            car.vx -= (1 + RESTITUTION) * dot * nx;
+            car.vy -= (1 + RESTITUTION) * dot * ny;
+          }
+        }
+      }
     }
 
     function draw() {
@@ -182,6 +227,17 @@
         ctx.lineTo(cameraX + canvas.width,   y);
       }
       ctx.stroke();
+
+      // --- obstacles ---
+      ctx.fillStyle = '#8e44ad';
+      ctx.strokeStyle = '#6c3483';
+      ctx.lineWidth = 2;
+      for (const obs of obstacles) {
+        ctx.beginPath();
+        ctx.arc(obs.x, obs.y, obs.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
 
       // --- car draw (physics car — CAR-3) ---
       ctx.save();
