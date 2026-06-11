@@ -41,6 +41,7 @@
     const GRID_SIZE         = 100;   // spatial-hash cell size (px) for broad-phase collision
     const SKID_THRESHOLD    = 80;    // lateral speed (px/s) above which skid marks appear
     const SKID_MAX          = 300;   // lateral speed (px/s) at which skid marks reach max opacity
+    const SKID_POOL_SIZE    = 300;   // max segments stored in the skidMarks array (count, not px/s)
     const MAX_DT            = 0.033; // dt cap (s) — clamps slow frames; 1/30 ≈ 0.033
     const BRAKE_MULTIPLIER  = 1.5;   // brake force relative to ACCEL (braking is stronger than accelerating)
     const CAR_RADIUS        = 18;    // approximate car collision radius (px)
@@ -212,7 +213,7 @@
           x2: rx + sH * 9, y2: ry - cH * 9,
           alpha: Math.min(1, car.lateralSlip / SKID_MAX)
         });
-        if (skidMarks.length > SKID_MAX) skidMarks.shift();
+        if (skidMarks.length > SKID_POOL_SIZE) skidMarks.shift();
       }
     }
 
