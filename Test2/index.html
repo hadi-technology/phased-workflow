@@ -218,6 +218,32 @@
     }
 
     requestAnimationFrame(loop);
+
+    // ============================================================
+    // INPUT EVENT LISTENERS — CAR-4
+    // ============================================================
+
+    document.addEventListener('keydown', (e) => {
+      keys[e.code] = true;
+      // prevent browser scroll for arrow keys and space
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) {
+        e.preventDefault();
+      }
+      // R to reset car
+      if (e.code === 'KeyR' || e.key === 'r' || e.key === 'R') {
+        car.x = ARENA_SIZE / 2;
+        car.y = ARENA_SIZE / 2;
+        car.vx = 0;
+        car.vy = 0;
+        car.heading = 0;
+        car.handbrake = false;
+        car.lateralSlip = 0;
+      }
+    });
+
+    document.addEventListener('keyup', (e) => {
+      keys[e.code] = false;
+    });
   </script>
 </body>
 </html>
