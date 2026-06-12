@@ -182,6 +182,31 @@
       requestAnimationFrame(loop);
     }
     requestAnimationFrame(loop);
+
+    // ============================================================
+    // INPUT — keydown/keyup populate `keys` (keyed by event.code)
+    // ============================================================
+    document.addEventListener('keydown', (e) => {
+      keys[e.code] = true;
+      // stop arrows/space from scrolling the page
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) {
+        e.preventDefault();
+      }
+      // R resets the car to arena center, zero velocity
+      if (e.code === 'KeyR') {
+        car.x = ARENA_SIZE / 2;
+        car.y = ARENA_SIZE / 2;
+        car.vx = 0;
+        car.vy = 0;
+        car.heading = 0;
+        car.handbrake = false;
+        car.lateralSlip = 0;
+      }
+    });
+
+    document.addEventListener('keyup', (e) => {
+      keys[e.code] = false;
+    });
   </script>
 </body>
 </html>
