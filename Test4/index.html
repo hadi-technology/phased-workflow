@@ -55,6 +55,17 @@
     const car = { x: ARENA_SIZE / 2, y: ARENA_SIZE / 2, vx: 0, vy: 0, heading: 0, handbrake: false, lateralSlip: 0 };
     const keys = {};            // held-key map, keyed by event.code (Phase 2: input)
     const obstacles = [];       // static circles (Phase 3: obstacles)
+    (function spawnObstacles() {
+      const MIN_DIST_FROM_CENTER = 200; // keep the spawn zone clear
+      while (obstacles.length < OBSTACLE_COUNT) {
+        const x = OBS_RADIUS + Math.random() * (ARENA_SIZE - OBS_RADIUS * 2);
+        const y = OBS_RADIUS + Math.random() * (ARENA_SIZE - OBS_RADIUS * 2);
+        const dx = x - ARENA_SIZE / 2, dy = y - ARENA_SIZE / 2;
+        if (Math.sqrt(dx*dx + dy*dy) > MIN_DIST_FROM_CENTER) {
+          obstacles.push({ x, y, r: OBS_RADIUS });
+        }
+      }
+    })();
     const skidMarks = [];       // world-space segments (Phase 3: skids)
 
     // ============================================================
@@ -126,6 +137,30 @@
       // integrate position
       car.x += car.vx * dt;
       car.y += car.vy * dt;
+
+      // wall bounce — clamp to arena, invert axis velocity * RESTITUTION
+      if (car.x - CAR_RADIUS < 0)            { car.x = CAR_RADIUS;              car.vx *= -RESTITUTION; }
+      if (car.x + CAR_RADIUS > ARENA_SIZE)   { car.x = ARENA_SIZE - CAR_RADIUS; car.vx *= -RESTITUTION; }
+      if (car.y - CAR_RADIUS < 0)            { car.y = CAR_RADIUS;              car.vy *= -RESTITUTION; }
+      if (car.y + CAR_RADIUS > ARENA_SIZE)   { car.y = ARENA_SIZE - CAR_RADIUS; car.vy *= -RESTITUTION; }
+
+      // obstacle circle collisions — push out, then reflect along normal
+      for (const obs of obstacles) {
+        const dx = car.x - obs.x;
+        const dy = car.y - obs.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        const minDist = CAR_RADIUS + obs.r;
+        if (dist < minDist && dist > 0) {
+          const nx = dx / dist, ny = dy / dist;
+          car.x += nx * (minDist - dist);
+          car.y += ny * (minDist - dist);
+          const dot = car.vx * nx + car.vy * ny;
+          if (dot < 0) { // only reflect when moving into the obstacle
+            car.vx -= (1 + RESTITUTION) * dot * nx;
+            car.vy -= (1 + RESTITUTION) * dot * ny;
+          }
+        }
+      }
     }
     function draw() {
       // camera: car stays at screen center
@@ -154,6 +189,17 @@
         ctx.lineTo(cameraX + canvas.width, y);
       }
       ctx.stroke();
+
+      // obstacles
+      ctx.fillStyle = '#8e44ad';
+      ctx.strokeStyle = '#6c3483';
+      ctx.lineWidth = 2;
+      for (const obs of obstacles) {
+        ctx.beginPath();
+        ctx.arc(obs.x, obs.y, obs.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
 
       // car (directional: body + front stripe shows heading)
       ctx.save();
