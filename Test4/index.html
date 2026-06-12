@@ -161,6 +161,20 @@
           }
         }
       }
+
+      // skid marks: record rear-axle segment while drifting or handbraking
+      const skidSpeed = Math.sqrt(car.vx * car.vx + car.vy * car.vy);
+      const isSkidding = (car.lateralSlip > SKID_THRESHOLD) || (car.handbrake && skidSpeed > 20);
+      if (isSkidding) {
+        const cH = Math.cos(car.heading), sH = Math.sin(car.heading);
+        const rx = car.x - cH * 15, ry = car.y - sH * 15; // 15px behind center
+        skidMarks.push({
+          x1: rx - sH * 9, y1: ry + cH * 9,  // rear-left
+          x2: rx + sH * 9, y2: ry - cH * 9,  // rear-right
+          alpha: Math.min(1, car.lateralSlip / SKID_MAX)
+        });
+        if (skidMarks.length > SKID_POOL_SIZE) skidMarks.shift();
+      }
     }
     function draw() {
       // camera: car stays at screen center
@@ -190,6 +204,17 @@
       }
       ctx.stroke();
 
+      // skid marks (world-space, under obstacles and car)
+      ctx.lineCap = 'round';
+      ctx.lineWidth = 4;
+      for (const s of skidMarks) {
+        ctx.strokeStyle = `rgba(0,0,0,${s.alpha * 0.6})`;
+        ctx.beginPath();
+        ctx.moveTo(s.x1, s.y1);
+        ctx.lineTo(s.x2, s.y2);
+        ctx.stroke();
+      }
+
       // obstacles
       ctx.fillStyle = '#8e44ad';
       ctx.strokeStyle = '#6c3483';
@@ -212,6 +237,19 @@
       ctx.restore();
 
       ctx.restore(); // exit world space
+
+      // HUD (screen-space) — reset camera transform first
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      const speed = Math.round(Math.sqrt(car.vx * car.vx + car.vy * car.vy));
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(10, 10, 230, 64);
+      ctx.fillStyle = '#f0f0f0';
+      ctx.font = 'bold 18px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('Speed: ' + speed, 20, 36);
+      ctx.fillStyle = '#888';
+      ctx.font = '11px monospace';
+      ctx.fillText('WASD / Arrows · Space=handbrake · R=reset', 20, 60);
     }
 
     // ============================================================
