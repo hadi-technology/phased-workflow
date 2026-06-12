@@ -60,7 +60,73 @@
     // ============================================================
     // UPDATE / DRAW (filled across later phases)
     // ============================================================
-    function update(dt) { /* physics added in Phase 2 */ }
+    function update(dt) {
+      // read held keys (populated by Phase 3 listeners; harmless empty until then)
+      const throttle   = (keys['KeyW'] || keys['ArrowUp'])    ? 1 : 0;
+      const brake      = (keys['KeyS'] || keys['ArrowDown'])  ? 1 : 0;
+      const steerInput = ((keys['KeyD'] || keys['ArrowRight']) ? 1 : 0)
+                       - ((keys['KeyA'] || keys['ArrowLeft'])  ? 1 : 0);
+      car.handbrake = !!keys['Space'];
+
+      const cosH = Math.cos(car.heading);
+      const sinH = Math.sin(car.heading);
+
+      // forward speed component (sign decides brake-vs-reverse)
+      const forwardVel = car.vx * cosH + car.vy * sinH;
+
+      // throttle along heading
+      if (throttle) {
+        car.vx += cosH * ACCEL * dt;
+        car.vy += sinH * ACCEL * dt;
+      }
+      // brake if moving forward, else reverse
+      if (brake) {
+        if (forwardVel > 0) {
+          car.vx -= cosH * ACCEL * dt * BRAKE_MULTIPLIER;
+          car.vy -= sinH * ACCEL * dt * BRAKE_MULTIPLIER;
+        } else {
+          car.vx -= cosH * REVERSE_ACCEL * dt;
+          car.vy -= sinH * REVERSE_ACCEL * dt;
+        }
+      }
+
+      // friction: coast to stop when no input
+      car.vx *= FRICTION;
+      car.vy *= FRICTION;
+
+      // decompose into forward + lateral axes (relative to heading)
+      const fv = car.vx * cosH + car.vy * sinH;
+      const lv = -car.vx * sinH + car.vy * cosH;
+
+      // lateral grip = drift: partially kill lateral velocity; clamp factor >= 0
+      const effectiveGrip = car.handbrake ? HANDBRAKE_GRIP : GRIP;
+      const newLateral = lv * Math.max(0, 1 - effectiveGrip);
+      car.lateralSlip = Math.abs(lv); // exposed for Phase 5 skids
+
+      // reconstruct velocity from forward + damped lateral
+      car.vx = fv * cosH - newLateral * sinH;
+      car.vy = fv * sinH + newLateral * cosH;
+
+      // speed clamp (top forward vs top reverse)
+      const speed = Math.sqrt(car.vx * car.vx + car.vy * car.vy);
+      const maxSpeed = fv >= 0 ? TOP_SPEED : TOP_REVERSE_SPEED;
+      if (speed > maxSpeed) {
+        const s = maxSpeed / speed;
+        car.vx *= s;
+        car.vy *= s;
+      }
+
+      // steering: speed-scaled, ~0 at rest, inverts in reverse
+      if (speed > 1) {
+        const speedFactor  = Math.min(speed / TOP_SPEED, 1);
+        const reverseSign  = fv >= 0 ? 1 : -1;
+        car.heading += STEER_RATE * steerInput * speedFactor * reverseSign * dt;
+      }
+
+      // integrate position
+      car.x += car.vx * dt;
+      car.y += car.vy * dt;
+    }
     function draw() {
       // camera: car stays at screen center
       const cameraX = car.x - canvas.width  / 2;
@@ -89,12 +155,14 @@
       }
       ctx.stroke();
 
-      // PLACEHOLDER car — Phase 2 replaces this single block with physics-car draw
+      // car (directional: body + front stripe shows heading)
       ctx.save();
       ctx.translate(car.x, car.y);
       ctx.rotate(car.heading);
       ctx.fillStyle = '#e74c3c';
       ctx.fillRect(-20, -10, 40, 20);
+      ctx.fillStyle = '#922b21';
+      ctx.fillRect(10, -10, 10, 20); // front-end stripe
       ctx.restore();
 
       ctx.restore(); // exit world space
