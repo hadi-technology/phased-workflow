@@ -1,6 +1,6 @@
 ---
 name: phased-workflow
-version: "3.2.0"
+version: "3.3.0"
 description: "Orchestrator: plan → review → approve → implement → QA. Dispatches sub-agents for each stage. Never does the work itself. Triggers: phased-workflow, pw:, /pw"
 metadata:
   tags: workflow, orchestration, sub-agent
@@ -93,10 +93,20 @@ If the task is large, the planner may produce multiple plan files with a `-phase
 
 ## Stage 2 — Review (sub-agent)
 
-**Dispatch a sub-agent** to run the `phased-review` skill against the plan file.
+**Dispatch a parallel review panel** — not a single reviewer. All seats run `phased-review`, dispatched in ONE message so they run concurrently. Wall-clock = one review; coverage = many lenses. No seat is the planner (fresh context each).
 
-- It MUST be a different sub-agent than the planner — fresh context, independent perspective.
-- The reviewer reads the plan AND the actual codebase, then returns findings with severity.
+**Always-on seats (every plan):**
+- **Verifier** — default `phased-review`: "is each claim correct against the code?"
+- **Adversary** — `lens=adversary`: "how is this wrong, what second-order effect does this change trigger, what did the author not consider?"
+- **Different-model seat** — run one seat on a different model than the planner/other seats (breaks correlated blind spots). Parallel, so no added wall-clock.
+
+**Surface-triggered seats** — fire ONLY when the plan touches a stateful/security surface (SQL/migration/RLS, auth/session, money/entitlement, native/permissions). Decide by reading "Files changed" + Problem statements:
+- **Domain specialist** — `lens=domain`: runs the stateful/security footgun checklist + flags vacuous-green DoD.
+- **Bug-class sweep agent** — a dedicated concurrent `general-purpose` agent: given the plan's defect patterns, grep the repo for siblings, return every site.
+
+Pure UI/logic/refactor with none of those surfaces → always-on seats only.
+
+**Merge:** dedupe across seats (same file:line + issue = one). A finding from ANY single seat counts — do not require consensus. Conflicts (one seat clears it, another flags) → adjudicate by reading the code yourself.
 
 ### Fix review findings
 
@@ -111,7 +121,7 @@ Fix every verified finding regardless of severity. Update the plan file.
 
 **Forbidden:** "You're absolutely right" / "Great point" / "Excellent feedback" / blind implementation. State the fix in the plan, not gratitude — actions on the plan show you heard the feedback.
 
-**When to re-review:** If fixes are substantial (structural changes, new phases, changed approach), dispatch the review sub-agent again. If fixes are minor (wording, constants, adding NTH notes), no re-review needed.
+**When to re-review:** If fixes are substantial (structural changes, new phases, changed approach) OR touch a stateful/security surface, re-dispatch the panel (same composition rules, parallel — one wall-clock pass). Minor non-behavioral fixes (wording, constants, NTH notes) → no re-review.
 
 ---
 
