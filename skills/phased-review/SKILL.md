@@ -5,7 +5,7 @@ description: "Review phased plans against the live codebase using risk-scaled pr
 
 # Phased Review
 
-**Suite contract:** 4.1.0
+**Suite contract:** 4.2.0
 
 ## Overview
 

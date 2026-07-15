@@ -5,7 +5,7 @@ description: "Write implementation-ready phased plans with empirical assumptions
 
 # Phased Plan
 
-**Suite contract:** 4.1.0
+**Suite contract:** 4.2.0
 
 ## Overview
 

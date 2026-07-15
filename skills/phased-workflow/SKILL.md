@@ -5,7 +5,7 @@ description: "Orchestrate plan → review → approve → sliced implementation 
 
 # Phased Workflow
 
-**Suite contract:** 4.1.0
+**Suite contract:** 4.2.0
 
 ## Overview
 
@@ -19,7 +19,7 @@ Orchestrate a structured delivery: plan → review → approve → implement →
 
 Read these references when their trigger applies:
 - External or headless reviewer seat: [references/external-reviewers.md](references/external-reviewers.md)
-- Long-running commands, stage budgets, evidence reuse, cancellation, or local skill parity: [references/execution-controls.md](references/execution-controls.md)
+- Implementation-model routing, long-running commands, stage budgets, evidence reuse, cancellation, or local skill parity: [references/execution-controls.md](references/execution-controls.md)
 
 ## When to use
 
@@ -63,6 +63,7 @@ Every sub-agent reports back with one of these codes plus evidence. Branch on th
 | `ARCHITECTURE_WRONG` | Approved approach cannot satisfy objective or creates an unacceptable design constraint | Stop affected slice. Return to planner/reviewer. Preserve completed independent slices |
 | `EMPIRICAL_DELTA` | Live behavior differs from a documented assumption, but objective and architecture remain valid | Record evidence. Patch plan locally. Resume affected slice without restarting completed gates |
 | `IMPLEMENTATION_DETAIL` | Local signature, path, or internal detail drifted without changing architecture | Let implementation owner adapt, verify, and record delta |
+| `CAPABILITY_ESCALATION` | The assigned implementation tier cannot reliably complete the slice within bounded attempts | Stop the owner, preserve evidence, resolve the premium tier, transfer ownership once, and reverify all unproven work |
 | `ENVIRONMENT_BLOCKED` | Credentials, service, dependency, permission, or host state prevents progress | Exhaust safe diagnostics, then escalate with exact unblock requirement |
 
 ---
@@ -216,6 +217,12 @@ Record pre-authorized policy once: uninterrupted execution, main/branch choice, 
 
 **Dispatch one implementation owner per slice** to run the `phased-implement` skill against the approved plan file.
 
+Resolve the implementation model through the provider-agnostic routing policy in [references/execution-controls.md](references/execution-controls.md):
+- Standard-risk slices use `implementation-standard`, the lowest expected-total-cost currently qualified coding model. Never select a provider's weakest or entry model merely because it is cheap.
+- High-risk slices use `implementation-premium` from the start.
+- Resolve concrete provider and model IDs from current runtime registry or team configuration. Never encode them in this skill.
+- Model tier never changes plan fidelity, DoD, verification, remediation, or fresh-QA requirements.
+
 - The owner executes the slice end-to-end, handles later QA fixes for that slice, and verifies DoD before proceeding.
 - No additional user approval gates between phases.
 - The implementer reports back: per-phase results, deviations, verification evidence.
@@ -227,6 +234,7 @@ Record pre-authorized policy once: uninterrupted execution, main/branch choice, 
 - `IMPLEMENTATION_DETAIL` → owner adapts and verifies.
 - `EMPIRICAL_DELTA` → planner records the evidence-backed delta; owner resumes affected slice.
 - `ARCHITECTURE_WRONG` → stop affected slice and re-plan. Keep independently completed work.
+- `CAPABILITY_ESCALATION` → stop the standard-tier owner, preserve diff and receipts, resolve `implementation-premium`, transfer ownership once, and reverify every unproven claim. Never run both owners concurrently.
 - `ENVIRONMENT_BLOCKED` → escalate only after bounded diagnostics identify the required external change.
 
 ---
@@ -312,14 +320,14 @@ After the final report, decide on integration. Skip when the user has already ta
 |-------|-------|----------------|---------------------|--------------------|
 | 1. Plan | `phased-plan` | Task requirements, project context | Plan file path, phase summary | `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` / `ARCHITECTURE_WRONG` / `ENVIRONMENT_BLOCKED` |
 | 2. Review | `phased-review` | Plan file path | Findings with severity, go/no-go, restated intent | `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` |
-| 4. Implement | `phased-implement` | Plan file path | Per-phase results, deviations, fresh verification evidence | `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` / `ARCHITECTURE_WRONG` / `EMPIRICAL_DELTA` / `IMPLEMENTATION_DETAIL` / `ENVIRONMENT_BLOCKED` |
+| 4. Implement | `phased-implement` | Plan file path, resolved implementation tier and qualification evidence | Per-phase results, deviations, fresh verification evidence | `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` / `ARCHITECTURE_WRONG` / `EMPIRICAL_DELTA` / `IMPLEMENTATION_DETAIL` / `CAPABILITY_ESCALATION` / `ENVIRONMENT_BLOCKED` |
 | 5. QA | `phased-qa` | Plan file path | Findings with severity, per-phase pass/fail, fresh verification evidence | `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` |
 
 If a sub-agent's report doesn't carry a valid status code, ask it to commit to one before acting on the report.
 
 ## Operational control loop
 
-At every stage boundary write machine-readable telemetry: stage, risk tier, seats dispatched, start/end timestamps, elapsed seconds, model/tool calls, expensive-command seconds, completed gates, findings by severity and lifecycle status, reused receipts, reruns, strategy changes, active blocker, and next action. Set an expected time/call budget before dispatch. Missing required telemetry returns `DONE_WITH_CONCERNS`; open findings still block completion. Exceeding budget triggers strategy reassessment, not an approval stop: narrow scope, switch to targeted diagnostics, replay a checkpoint, or change model/provider.
+At every stage boundary write machine-readable telemetry: stage, risk tier, resolved model tier and runtime model ID, qualification source, escalation reason, seats dispatched, start/end timestamps, elapsed seconds, model/tool calls, expensive-command seconds, completed gates, findings by severity and lifecycle status, reused receipts, reruns, strategy changes, active blocker, and next action. Set an expected time/call budget before dispatch. Missing required telemetry returns `DONE_WITH_CONCERNS`; open findings still block completion. Exceeding budget triggers strategy reassessment, not an approval stop: narrow scope, switch to targeted diagnostics, replay a checkpoint, or change model/provider.
 
 For work lasting more than 30 minutes, send periodic status updates with current slice, elapsed time, completed evidence, blocker, and budget deviation. Never leave the user unable to distinguish progress from a stuck command.
 

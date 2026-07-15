@@ -5,7 +5,7 @@ description: "Execute an approved phased plan as an implementation-slice owner u
 
 # Phased Implement
 
-**Suite contract:** 4.1.0
+**Suite contract:** 4.2.0
 
 ## Overview
 
@@ -31,6 +31,7 @@ Trigger phrases: `phased-implement`, `/implement`
 4. Extract approval scope, main/branch policy, commit boundaries, check classifications, slice budget, and parallel-safety contract.
 5. For external/native/long-running work, read the discovery receipt before editing. Missing load-bearing evidence returns `NEEDS_CONTEXT`.
 6. Load the decision and evidence manifest. Confirm every decision ID used by the slice. Record compliance or deviation; a manifest never authorizes unreviewed scope.
+7. Read the dispatched implementation tier and qualification evidence. Apply the same plan, DoD, verification, and reporting contract at every tier. If bounded evidence shows this tier cannot reliably execute the slice, return `CAPABILITY_ESCALATION`; do not lower the quality bar or continue speculative retries.
 
 ### Step 2 — Execute each phase
 
@@ -72,6 +73,7 @@ When implementation reveals something the plan didn't anticipate:
 | Local path/signature/detail drift with unchanged architecture | Adapt, verify, report `IMPLEMENTATION_DETAIL`, continue. |
 | Observed external behavior differs but architecture remains valid | Record probe evidence, return `EMPIRICAL_DELTA`, obtain plan delta, resume this slice. |
 | Approved architecture cannot satisfy the objective | Stop affected slice. Return `ARCHITECTURE_WRONG`. Preserve completed independent slices. |
+| Assigned model tier repeatedly fails the same reasoning/tool contract, cannot interpret verification evidence, or discovers a high-risk surface outside its qualification | Stop after bounded diagnostics. Return `CAPABILITY_ESCALATION` with failure receipts and unverified work clearly marked. |
 | Credentials, dependency, service, permission, or host state blocks work | Run bounded diagnostics. Return `ENVIRONMENT_BLOCKED` with exact unblock requirement. |
 
 **Never silently deviate from the plan.** Every deviation is either documented (small fix, NTH) or escalated (plan wrong, blocker).
@@ -262,6 +264,7 @@ Every phase report and the final report must commit to one status code. Use the 
 | `ARCHITECTURE_WRONG` | Approved approach cannot meet the objective. Propose architecture correction and stop affected slice |
 | `EMPIRICAL_DELTA` | Live evidence changes a plan assumption without invalidating architecture. Record receipt and proposed delta |
 | `IMPLEMENTATION_DETAIL` | Local implementation detail drifted. Adapted and verified without changing architecture |
+| `CAPABILITY_ESCALATION` | The dispatched implementation tier cannot reliably finish after bounded diagnostics. Preserve diff/receipts and identify every unverified claim |
 | `ENVIRONMENT_BLOCKED` | External environment prevents progress after bounded diagnostics. State exact unblock requirement |
 
 A report without a status code is not a valid report — pick one.
@@ -275,6 +278,7 @@ A report without a status code is not a valid report — pick one.
 - Cleanliness self-check results — each item answered with `PASS` or `FIXED-WITH: <what you fixed>`
 - NTH items discovered
 - Decision-manifest compliance and deviations
+- Dispatched implementation tier, runtime-resolved model ID, qualification source, and any capability-escalation evidence
 
 **Final summary:**
 - **Overall status code** (the worst code across phases — e.g., one `ENVIRONMENT_BLOCKED` phase ⇒ overall `ENVIRONMENT_BLOCKED`)
@@ -308,7 +312,7 @@ When the dispatch prompt provides a `report-target=<path>` directive (or any equ
    tldr: <≤200 token summary — what was built, key evidence pointer, file count touched>
    ```
 
-   For non-`DONE` statuses (`ARCHITECTURE_WRONG`, `EMPIRICAL_DELTA`, `ENVIRONMENT_BLOCKED`, `NEEDS_CONTEXT`, `DONE_WITH_CONCERNS`), include one extra line:
+   For non-`DONE` statuses (`ARCHITECTURE_WRONG`, `EMPIRICAL_DELTA`, `CAPABILITY_ESCALATION`, `ENVIRONMENT_BLOCKED`, `NEEDS_CONTEXT`, `DONE_WITH_CONCERNS`), include one extra line:
 
    ```
    concerns: <N> findings, see report     # or: blocked: <one-line cause>

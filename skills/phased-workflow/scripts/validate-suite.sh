@@ -62,14 +62,21 @@ require_pattern "$workflow" 'Quality invariant:.*OPEN.*REMEDIATED.*CLOSED' 'POLI
 require_pattern "$workflow" 'Normal-risk plan.*two seats' 'POLICY_REVIEW_SEATS'
 require_pattern "$workflow" 'two independent targeted closure lenses' 'POLICY_CLOSURE_LENSES'
 require_pattern "$workflow" 'Standard QA retains a fresh exhaustive whole-diff scan' 'POLICY_FRESH_QA'
+require_pattern "$workflow" 'implementation-standard.*lowest expected-total-cost currently qualified coding model' 'POLICY_STANDARD_MODEL_TIER'
+require_pattern "$workflow" 'Never encode them in this skill' 'POLICY_RUNTIME_MODEL_RESOLUTION'
 require_pattern "$plan" 'Decision and evidence manifest' 'PLAN_MANIFEST'
 require_pattern "$review" 'planner evidence is a claim, not a trust boundary' 'REVIEW_MANIFEST_VALIDATION'
 require_pattern "$review" 'two independent targeted closure lenses' 'REVIEW_CLOSURE_LENSES'
 require_pattern "$implement" 'Cross-stage receipts never substitute for fresh QA release evidence' 'IMPLEMENT_NO_QA_SUBSTITUTION'
+require_pattern "$implement" 'CAPABILITY_ESCALATION' 'IMPLEMENT_CAPABILITY_ESCALATION'
 require_pattern "$qa" 'Standard QA remains fresh and exhaustive' 'QA_FRESH_RELEASE_GATE'
 require_pattern "$qa" 'two independent targeted closure lenses' 'QA_CLOSURE_LENSES'
 
 test -f "$root/phased-workflow/references/execution-controls.md" || { echo 'E_MISSING_EXECUTION_CONTROLS' >&2; exit 1; }
+controls="$root/phased-workflow/references/execution-controls.md"
+require_pattern "$controls" 'Never encode concrete implementation provider or model names' 'POLICY_PROVIDER_AGNOSTIC_ROUTING'
+require_pattern "$controls" "Do not choose a provider's weakest, entry, or general lightweight model merely because its unit price is lowest" 'POLICY_CAPABILITY_FLOOR'
+require_pattern "$controls" 'Model tier never changes plan fidelity, DoD, test depth, remediation, closure, or fresh independent QA' 'POLICY_MODEL_QUALITY_INVARIANT'
 test -f "$root/phased-workflow/references/external-reviewers.md" || { echo 'E_MISSING_EXTERNAL_REVIEWERS' >&2; exit 1; }
 schema="$root/phased-workflow/references/findings.schema.json"
 test -f "$schema" || { echo 'E_MISSING_FINDINGS_SCHEMA' >&2; exit 1; }

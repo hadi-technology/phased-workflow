@@ -5,7 +5,7 @@ description: "Run post-implementation QA against a phased plan using exhaustive 
 
 # Phased QA
 
-**Suite contract:** 4.1.0
+**Suite contract:** 4.2.0
 
 ## Overview
 
