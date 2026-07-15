@@ -1,12 +1,11 @@
 ---
 name: phased-qa
-version: "2.3.0"
-description: "Post-implementation QA. Verifies completed work against the plan's objectives and DoD — runs the verification gate, reads code, audits cleanliness, checks regression-test red-green. Evidence before claims. Triggers: phased-qa, /pqa, pqa:"
-metadata:
-  tags: qa, verification, phased-plan, validation, sub-agent
+description: "Run post-implementation QA against a phased plan using exhaustive Round 1 review, bounded named-finding closure, risk-based integration checks, evidence fingerprints, checkpointed probes, and process-cleanliness verification. Use for phased-qa, /pqa, or pqa: requests."
 ---
 
 # Phased QA
+
+**Suite contract:** 4.0.0
 
 ## Overview
 
@@ -31,6 +30,7 @@ Trigger phrases: `phased-qa`, `/pqa`, `pqa:`
 1. Get the plan file path (ask if not provided).
 2. Parse each phase and extract: objectives, functional DoD, code DoD, and any specified verification commands.
 3. Build a checklist. Every DoD item becomes a line item to verify.
+4. Read `qa-round`. Default to `1`. For Round 2, load Round 1 finding IDs and closure evidence requirements.
 
 ### Step 1.5 — Restate the phase intent
 
@@ -41,16 +41,25 @@ Before running a single command, write one sentence per phase capturing what the
 
 ### Step 2 — Run the verification gate
 
-**Exhaustive-scan principle:** audit the ENTIRE diff in this single QA pass. Do NOT stop at the first 1-3 issues. The fix loop has a finite budget (typically 2 rounds) — if you surface 5 findings now, the implementer fixes all 5 in one fix dispatch and Round 2 confirms. If you surface only the most obvious 1-2, Round 2 catches the rest, costing extra dispatches and risking abandonment when the budget exhausts.
+**Round 1 exhaustive-scan principle:** audit the ENTIRE diff. Do not stop at the first findings. Report every verified finding regardless of severity and assign a stable finding ID.
 
-Beyond the per-DoD verification below, also scan the entire diff for: raw hex / hardcoded numbers in styles, dead `console.log` / `// TODO:` / `// eslint-disable` / `debugger`, files modified outside the plan's scope, dead imports, hardcoded strings/paths that should be constants, naming inconsistencies vs nearest peer files. Report ALL findings, severity-tagged (`high` blocks acceptance; `medium` should be fixed; `low` is NTH).
+**Round 2 closure principle:** verify named Round 1 finding IDs and their affected regression surface only. Do not restart whole-diff QA. Report and fix any new verified defect in that surface regardless of severity. Use targeted owner proof for low/medium closure. Tag a new critical/high regression `ROUND2-REGRESSION`; a third independent pass is limited to its closure.
+
+In Round 1, scan the entire diff for raw hex/hardcoded style values, dead logging/backlog markers/debuggers, out-of-scope files, dead imports, misplaced constants, and naming drift. Report all severities. Every verified finding must be fixed before final acceptance.
+
+Classify each planned check before execution:
+- `REQUIRED` — must pass.
+- `CONDITIONAL` — must pass when its trigger applies; otherwise record N/A evidence.
+- `ADVISORY` — collect when budget permits; failure or a documented resource ceiling cannot block acceptance.
+
+Use the verification pyramid: smallest affected check during fix loops, affected subsystem gate after a finding batch, and full suite once at the final milestone gate. Do not rerun a full qualification matrix to diagnose one probe.
 
 Before claiming any DoD item passes, run this five-step gate. Skipping any step is not verification — it is a false claim.
 
 ```
 FOR each DoD item:
   1. IDENTIFY: What command or code read proves this claim?
-  2. RUN:      Execute the command (fresh in this session — never cached, never copied from a previous run)
+  2. RUN:      Execute the command, or reuse an exact fingerprint match
   3. READ:     Full output — exit code, count, errors, warnings
   4. COMPARE:  Does the output literally confirm the claim?
                  - YES → record as PASS with the exact output
@@ -60,7 +69,9 @@ FOR each DoD item:
 Skip any step = false claim.
 ```
 
-**The Iron Law:** No QA pass claims without fresh verification evidence in this session. If you have not run the command, you cannot claim it passes — and "looks correct" is not running the command.
+**The Iron Law:** No QA pass claims without valid evidence. Fresh execution is the default. Reuse only when commit, diff, plan, tool version, configuration, inputs, and probe ID match exactly. Record fingerprint and receipt path.
+
+For expensive matrices, use stable probe IDs, per-probe receipts, `--only` or equivalent targeted runs, and resume/replay. Run one final full matrix after targeted failures close.
 
 **Common verification commands** (use the project's actual commands — read project instructions / `package.json` scripts / Makefile to find them):
 | DoD type | Verification |
@@ -154,6 +165,15 @@ If the phase fixed a bug, the implementer should have produced evidence the test
 - If absent, run it yourself: revert the fix locally (`git stash` or undo), run the test, confirm FAIL output, restore (`git stash pop`), confirm PASS output.
 - A regression test that was never red is not a regression test — flag as high severity. The bug was not actually proven fixed.
 
+**3j. Behavioral verification for stateful/security DoD — execute, don't grep**
+
+For RLS/auth/migration/runtime DoD, a grep that a symbol/policy exists proves the edit, not the behavior. Run it as the target actor and assert the result:
+- RLS: `SET ROLE anon; SELECT …` — confirm rows returned/denied as intended. A GRANT does NOT grant row visibility under RLS; only a POLICY does — verify the policy.
+- SECURITY DEFINER guard: call as a non-owner, confirm it raises.
+- Also confirm any security fix covered the bug CLASS (grep siblings), not just the cited site.
+
+A DoD that passes when the fix is wrong = vacuous green = high-severity finding.
+
 ### Step 4 — Write findings
 
 For every issue:
@@ -162,8 +182,11 @@ For every issue:
 2. **Severity** — critical / high / medium / low
 3. **Evidence** — the command output, file path, or code that proves the issue
 4. **Remediation** — exact file path + concrete patch suggestion (do NOT implement — report only)
+5. **Finding ID** — stable across fix and closure rounds
 
 **Do not fix unless explicitly asked.** Report findings with enough detail that someone else can fix them.
+
+Round 2 reports every Round 1 finding ID as `CLOSED` or `OPEN` with evidence. Severity never makes a verified finding optional.
 
 ---
 
@@ -198,9 +221,14 @@ For each phase:
 ### Final Summary
 
 - Overall QA status: `pass` or `fail`
+- QA round: `1` or `2`
 - Total findings by severity
+- Named-finding closure table
 - Open issues grouped by phase
 - Verification evidence summary (test counts, TypeScript result, lint result)
+- Evidence fingerprints and checkpoint receipts
+- External/native process cleanup audit
+- Estimated vs actual time/tool-call budget
 
 ---
 
@@ -228,7 +256,7 @@ When the dispatch prompt provides a `report-target=<path>` directive (or any equ
 
 3. Returning more than ~300 tokens of inline text is a contract violation. The disk file is the source of truth; the return message is just the index. The orchestrator (Hashus) has its own context to protect — dumping the full report inline AND on disk doubles its context cost without adding any auditable value.
 
-**Verifying disk-first mode is in effect:** if the dispatch prompt mentions a path under `plans/run-reports/` or instructs you to write a report to a specific file, you are in disk-first mode. When in doubt, the orchestrator checks `test -s <path>` after your return — an empty or missing file is treated as `BLOCKED` regardless of your status code.
+**Verifying disk-first mode is in effect:** if the dispatch prompt mentions a path under `plans/run-reports/` or instructs you to write a report to a specific file, you are in disk-first mode. When in doubt, the orchestrator checks `test -s <path>` after your return — an empty or missing file is treated as `ENVIRONMENT_BLOCKED` regardless of your status code.
 
 **When disk-first mode is NOT in effect** (no `report-target` directive in the dispatch prompt): use the inline format described in the **Output Contract** above. This is the default for direct user invocations of `/pqa`.
 
@@ -236,66 +264,78 @@ When the dispatch prompt provides a `report-target=<path>` directive (or any equ
 
 ## Wave-mode dispatches (invoked by Hashus orchestrator)
 
-When the dispatch prompt names `mode: wave` (or sends a `standard-verify-list` / `critical-reverify-list` / asks for whole-system checks across multiple task ids), you are running **wave-mode QA** for the Hashus orchestrator. This expands the per-phase QA contract above with three additional responsibilities:
+When the dispatch prompt names `mode: wave`, you are the **single fresh QA agent for an entire wave** under Hashus. There is exactly one implement agent and one QA agent per wave — no per-task QA, no second pass coming. You verify **every row in the wave**. The implementer's full report for the wave is at `plans/run-reports/<dir>/wave-<N>/implement.md`; your report goes to `plans/run-reports/<dir>/wave-<N>/qa.md`.
 
-### 1. Standard-tier acceptance + rigor verification (the verification — there is no per-task QA for these rows)
+### Trust the upstream plan — verify compliance, don't re-review design
 
-The dispatch will provide a `standard-verify-list` of task ids whose per-task QA was skipped because Zayneb classified them `standard` (the default tier — only `critical` rows get per-task QA dispatched). For each row on this list, the wave QA pass IS the verification — there is no second pass coming. Treat it accordingly:
+The row was investigated and the plan was reviewed upstream by Zayneb (`phased-review` already validated design quality, pattern choices, and blast radius against live code). In wave mode your job is **build-vs-spec verification + compliance with the row's pinned rigor** — NOT a re-review of whether the plan was good. Concretely, in wave mode:
 
-- Read the implementer's disk report (path provided in the dispatch — typically `plans/run-reports/<dir>/wave-<N>/<task-id>-implement.md`).
-- Verify each `acceptance_criteria` against the actual code/diff (not the implementer's claim — run the greppable / testable / observable command yourself and paste evidence).
-- Verify each rigor section's contract was honored:
-  - `Pattern scan: Decision: reuse <X>` → confirm the diff imports/uses `<X>`. Quote the import line.
-  - `Blast radius: Verdict: systemic` → confirm the diff touches every sibling listed. Run `git diff --name-only` against the wave's commit, cross-reference to `scope_candidates`.
-  - `Multi-layer:` named layers → grep / read each guard. Paste the matching line.
-  - `Pre-existing state:` named mechanism → confirm migration / recency filter / cleanup-on-read exists in the diff. Paste the path + line.
-- Findings against a standard-tier row are reported under that row's id in your wave report so the orchestrator can route the row back to the per-task fix loop with both rounds of its budget intact.
+- **Skip Step 1.5's "flag the plan as vague" finding-class.** Plan quality is Zayneb's domain and already gated. If a row cannot be verified because its `acceptance_criteria` are unrunnable, route `ARCHITECTURE_WRONG` or `EMPIRICAL_DELTA`; do not author an implementation finding.
+- **Pattern reuse = compliance check, not a re-search.** The row's `Pattern scan` already decided "reuse `<X>` at `file:line`." Confirm the diff actually used `<X>` (quote the import/call line). Do NOT go re-search the codebase for some *other* equivalent the plan "should have" used — that decision is already made and reviewed.
+- **Blast radius = confirm coverage, not re-enumerate from scratch.** The row's `Blast radius` already lists the siblings. Confirm the diff touched each listed sibling; you don't need to re-derive the sibling set.
 
-### 2. Critical-tier independent re-verification (belt + suspenders)
+This removes the triple-derivation (Zayneb planned it, the implementer self-checked it, and a naive QA would re-derive it a third time). You still catch real drift — an implementer who ignored the pinned decision — because that's a *compliance* failure, which you DO report.
 
-The dispatch will provide a `critical-reverify-list` of task ids whose per-task QA already ran (and passed). For each row on this list:
+### What you verify (every row in the wave)
 
-- Run the per-task Verification Gate independently (acceptance_criteria + rigor sections) **without** reading the per-task QA's report — you are an independent second pair of eyes on the same diff.
-- If your independent check disagrees with what the per-task QA concluded, treat the disagreement itself as a finding and report it under that row's id. The orchestrator will route the disagreement back to the per-task fix loop.
+1. **Acceptance criteria + rigor, per row.** For each row, run its acceptance criteria against the actual code/diff (not the implementer's claim) — lead with the behavioral/observable check, use any grep as a cheap pre-filter — and confirm each rigor section's contract was honored:
+   - `Pattern scan: Decision: reuse <X>` → confirm the diff uses `<X>`. Quote the line.
+   - `Blast radius: Verdict: systemic` → confirm the diff touches every listed sibling. `git diff --name-only`, cross-reference `scope_candidates`.
+   - `Multi-layer:` named layers → grep/read each guard. Paste the line.
+   - `Pre-existing state:` named mechanism → confirm migration / recency filter / cleanup-on-read exists. Paste path + line.
+   - Rows whose `qa_tier` is `critical` (named by id in the dispatch) get a **deeper re-derivation** of their load-bearing logic — re-run the behavioral check, trace the contract end-to-end, don't accept a passing grep as proof of correctness. `standard` rows get the normal verification above.
+2. **Coherence of the assembled wave.** Exercise the integrated behavior as a user would (run it / trace the main path). A wave where each row greps green but the whole feels broken is a `DONE_WITH_CONCERNS`, not a pass. This is the check that catches "works on paper, broken in practice."
+3. **Whole-system checks** (once per wave — use the project's actual commands; skip + note any not defined):
+   - **Typecheck** — exit 0. If non-zero, identify which row introduced it (correlate touched files to `scope_candidates`) and report under that row's id.
+   - **Tests** — pass. Failures routed to the originating row.
+   - **Lint** (scoped to the wave's touched files) — exit 0.
+   - **Backlog-marker scan** — 0 committed `// TODO:` (or the project's prohibited marker) in the wave's diff. A documented `// DEFERRED:`-style marker is exempt.
+4. **Integration across the wave's rows** — interactions a single-row view can't see (a hook from row A consumed by a screen from row B; a provider added by row A that must wrap row B's component).
+5. **Cross-wave regression — structured blast-radius re-checking** (this is Hashus wave-QA check 5; a regression here routes to Hashus's cross-wave handling, not the wave fix loop):
+   1. List files changed this wave: `git diff --name-only <wave-baseline>..` (working tree — the wave isn't committed yet).
+   2. For each changed file F, find every earlier-committed-wave file that imports F or shares a sibling pattern (`grep -r` + earlier rows' Blast-radius notes).
+   3. Re-run the DoD command for every dependent. Every dependent, not a sample.
+   4. Any dependent whose DoD previously passed but now fails = cross-wave regression.
 
-### 3. Whole-system checks (always run at wave level)
-
-These checks live exclusively in wave-mode QA — per-task QA does not run them (cost amortization). Run all four for every wave, using the project's actual commands (look up the typecheck / test / lint / backlog-marker commands from project instructions, `package.json` scripts, Makefile, or equivalent):
-
-- **Typecheck** (e.g. `npx tsc --noEmit`, `pnpm typecheck`, `cargo check`, `mypy .`) — must exit 0. If non-zero, identify which task in the wave introduced the type error (read the touched files; correlate with each task's `scope_candidates`) and report the finding under the introducing task's id.
-- **Tests** (project's test command, optionally scoped to wave's test files for very large suites — the dispatch prompt may specify scope) — must pass. Failed tests routed to the originating task.
-- **Lint** (project's lint command, scoped to wave's touched files) — must exit 0 against the project's lint config.
-- **Backlog-marker scan** — per the project's release DoD, scan touched paths for any committed `// TODO:` (or the project's equivalent prohibited backlog marker). Must be 0 hits. Any new `TODO:` in the wave's diff is a finding routed to the introducing task. If the project documents a separate `// DEFERRED:` (or equivalent) prefix as the legitimate post-release backlog marker, that prefix is exempt from this scan.
-
-If the project's instructions don't define one of these commands, note that in the report and skip the check rather than inventing a command.
+Row-scoped findings (checks 1–4) route to Hashus's **wave fix loop**. Tag any cosmetic-only finding `[DOC-ONLY]` so Hashus can batch it on the fast path.
 
 ### Wave-mode disk report layout
 
-Your wave-qa.md disk report sections, in order:
+Your `qa.md` disk report sections, in order:
 
 ```
 # Wave <N> QA Report
 
-## Verification Gate evidence
-<per-task acceptance + rigor verification, grouped by task id, with command + output snippets>
+## Per-row verification (acceptance + rigor)
+<grouped by row id, with command + output snippets; compliance checks for Pattern scan / Blast radius / Multi-layer / Pre-existing state>
+
+## Coherence of the assembled wave
+<what you exercised end-to-end; pass or DONE_WITH_CONCERNS with what felt broken>
 
 ## Whole-system check results
-<tsc / jest / eslint / TODO grep — full output paste of any failure, summary if all pass>
+<typecheck / tests / lint / backlog-marker grep — full output paste of any failure, summary if all pass>
 
-## Standard-tier verification (from standard-verify-list)
-<per-task results — pass or finding-with-route-target>
+## Integration across the wave's rows
+<cross-row interactions checked; N/A — solo wave if wave-size 1>
 
-## Critical-tier independent re-verification (from critical-reverify-list)
-<per-task results + any disagreement-with-per-task-QA notes>
-
-## Cross-wave regression (structured blast-radius re-checking per Hashus 4d step 5)
+## Cross-wave regression (structured blast-radius re-checking)
 <per-dependent DoD command + result>
 
 ## Findings summary
-<all findings by severity, each tagged with task id and route target (per-task fix loop / cross-wave fix loop)>
+<all findings by severity, each tagged with row id and route (wave fix loop / cross-wave handling); [DOC-ONLY] tags where applicable>
 ```
 
 The inline return follows the disk-first format (STATUS + report path + tldr + concerns count). All evidence and findings live on disk.
+
+---
+
+## Operational boundaries
+
+- Verify owned child processes, sockets, temporary credentials, and qualification artifacts were cleaned up or intentionally retained with an owner.
+- Never kill unrelated processes by broad name matching.
+- After two identical failures, stop full reruns. Record failure signature, write a hypothesis, and run a targeted diagnostic.
+- Exceeding the QA budget triggers narrower evidence collection or targeted replay, not silent open-ended execution.
+- For QA lasting more than 30 minutes, report current gate, elapsed time, completed finding IDs, blocker, and next action.
 
 ---
 

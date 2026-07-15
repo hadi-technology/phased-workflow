@@ -1,18 +1,21 @@
 ---
 name: phased-workflow
-version: "3.3.0"
-description: "Orchestrator: plan → review → approve → implement → QA. Dispatches sub-agents for each stage. Never does the work itself. Triggers: phased-workflow, pw:, /pw"
-metadata:
-  tags: workflow, orchestration, sub-agent
+description: "Orchestrate plan → review → approve → sliced implementation → QA with bounded review rounds, empirical discovery for uncertain integrations, risk-adaptive multi-model seats, checkpointed verification, and evidence-backed delivery. Use for phased-workflow, phased workflow, pw:, or /pw requests."
 ---
 
 # Phased Workflow
+
+**Suite contract:** 4.0.0
 
 ## Overview
 
 Orchestrate a structured delivery: plan → review → approve → implement → verify. Each stage is a sub-agent with a fresh perspective. The orchestrator coordinates — it never writes plan content, implements code, or performs QA itself.
 
-**Core principle:** Four-eyes at every stage. The planner doesn't review their own plan. The implementer doesn't QA their own code. Each sub-agent gets the plan file and the codebase — not the previous agent's session context.
+**Core principle:** Independent eyes at decision boundaries. Keep one implementation owner per slice. Use separate reviewers and QA agents. Spend parallelism on independent work and correlated-risk reduction, not repeated derivation.
+
+Read these references when their trigger applies:
+- External or headless reviewer seat: [references/external-reviewers.md](references/external-reviewers.md)
+- Long-running commands, stage budgets, evidence reuse, cancellation, or local skill parity: [references/execution-controls.md](references/execution-controls.md)
 
 ## When to use
 
@@ -26,14 +29,16 @@ Trigger phrases: `phased-workflow`, `phased workflow`, `pw:`, `/pw`
 
 ```
 Stage 0: SCOPE CHECK (optional) → clarify with user if request is vague
+Stage 0.5: DISCOVERY (conditional) → empirical probes before planning uncertain surfaces
 Stage 1: PLAN                   → sub-agent writes the plan (phased-plan skill)
 Stage 2: REVIEW                 → sub-agent reviews the plan (phased-review skill)
-         FIX                    → orchestrator fixes review findings, updates plan
-         (re-review if fixes were substantial)
+         FIX                    → planner fixes verified findings
+         ROUND 2                → named-finding closure only
 Stage 3: APPROVE                → present to user, STOP, wait for explicit approval
-Stage 4: IMPLEMENT              → sub-agent executes the plan (phased-implement skill)
+Stage 4: IMPLEMENT              → one owner executes each independently verifiable slice
 Stage 5: QA                     → sub-agent verifies the work (phased-qa skill)
-         FIX                    → orchestrator fixes QA findings
+         FIX                    → implementation owner fixes verified findings
+         ROUND 2                → named-finding closure only
          REPORT                 → present final report to user
 Stage 6: FINISH (optional)      → commit / PR / merge handoff
 ```
@@ -51,8 +56,10 @@ Every sub-agent reports back with one of these codes plus evidence. Branch on th
 | `DONE` | All objectives met, all DoD verified with evidence | Proceed to next stage |
 | `DONE_WITH_CONCERNS` | Completed, but flagged doubts (scope creep, risk, file size, observation) | Read concerns. If correctness/scope: address before proceeding. If observation: note and proceed |
 | `NEEDS_CONTEXT` | Sub-agent missing information that wasn't provided | Provide the missing context, re-dispatch the same sub-agent |
-| `BLOCKED` | Cannot complete — environment problem, fundamental gap, or unclear requirement | Assess: context gap → re-dispatch with more context. Reasoning gap → re-dispatch with more capable model. Plan wrong → handle via `PLAN_WRONG`. Environment → escalate to user |
-| `PLAN_WRONG` | The plan contains an error that prevents implementation | Stop. Update the plan. Re-dispatch the implementer for remaining phases. Note delta in final report |
+| `ARCHITECTURE_WRONG` | Approved approach cannot satisfy objective or creates an unacceptable design constraint | Stop affected slice. Return to planner/reviewer. Preserve completed independent slices |
+| `EMPIRICAL_DELTA` | Live behavior differs from a documented assumption, but objective and architecture remain valid | Record evidence. Patch plan locally. Resume affected slice without restarting completed gates |
+| `IMPLEMENTATION_DETAIL` | Local signature, path, or internal detail drifted without changing architecture | Let implementation owner adapt, verify, and record delta |
+| `ENVIRONMENT_BLOCKED` | Credentials, service, dependency, permission, or host state prevents progress | Exhaust safe diagnostics, then escalate with exact unblock requirement |
 
 ---
 
@@ -69,6 +76,18 @@ Before dispatching the planner, judge whether the request is concrete enough to 
 
 A vague task at Stage 0 produces a vague plan at Stage 1, which produces wasted work at Stage 4. Clarify upstream — never plan around ambiguity.
 
+### Stage 0.5 — Empirical discovery (conditional)
+
+Run discovery before detailed planning when work touches any of these:
+- External/headless CLI or unfamiliar provider API
+- Native process, socket, filesystem permission, sandbox, or security boundary
+- Long-context, stochastic, timing-sensitive, or resource-limited behavior
+- A first-time SDK call whose contract is not already proven in this repository
+
+Discovery produces small, disposable probes and a receipt containing command, environment, observed behavior, constraints, and unresolved unknowns. Probe the load-bearing assumptions only. Do not build production code here.
+
+If a probe invalidates the proposed architecture, return `ARCHITECTURE_WRONG`. If it refines a value or implementation detail, record `EMPIRICAL_DELTA` and continue. Feed the receipt to the planner. Never write an exact-code plan around an untested external assumption.
+
 ---
 
 ## Stage 1 — Plan (sub-agent)
@@ -81,30 +100,29 @@ Provide the sub-agent with:
 
 The sub-agent writes the plan, self-checks it, and returns the plan file path.
 
-### Multi-file plans
+### Roadmaps, slices, and multi-file plans
 
-If the task is large, the planner may produce multiple plan files with a `-phase-N` suffix (e.g., `feature-phase-1.md`, `feature-phase-2.md`). Each file is self-contained and independently executable. When this happens:
+If the task is large, decompose it into independently verifiable slices before implementation. A slice should normally fit 30–90 minutes, leave the tree working, and have its own DoD. Parallelize only slices with disjoint write sets or an explicit integration owner.
+
+The planner may produce multiple plan files with a `-phase-N` suffix. Each file is self-contained and independently executable. When this happens:
 
 - **Run the full pipeline (Stages 2–5) on phase-1 first.** Do not plan phase-2 until phase-1 is implemented and QA'd — later phases may need to adjust based on what was learned.
 - After phase-1's QA passes, dispatch a new planner sub-agent for phase-2 (or review the already-written phase-2 plan against the now-changed codebase).
-- Repeat until all phase files are complete.
+- Repeat until all phase files are complete. Commit each completed milestone when pre-authorized. Do not reopen approval between slices when the user approved uninterrupted execution.
 
 ---
 
 ## Stage 2 — Review (sub-agent)
 
-**Dispatch a parallel review panel** — not a single reviewer. All seats run `phased-review`, dispatched in ONE message so they run concurrently. Wall-clock = one review; coverage = many lenses. No seat is the planner (fresh context each).
+**Dispatch a risk-adaptive review panel** in one parallel wave. No seat is the planner.
 
-**Always-on seats (every plan):**
+**Normal-risk plan — two seats:**
 - **Verifier** — default `phased-review`: "is each claim correct against the code?"
-- **Adversary** — `lens=adversary`: "how is this wrong, what second-order effect does this change trigger, what did the author not consider?"
-- **Different-model seat** — run one seat on a different model than the planner/other seats (breaks correlated blind spots). Parallel, so no added wall-clock.
+- **Independent adversary** — different model/provider when available. Combine adversarial and second-order-effect lenses.
 
-**Surface-triggered seats** — fire ONLY when the plan touches a stateful/security surface (SQL/migration/RLS, auth/session, money/entitlement, native/permissions). Decide by reading "Files changed" + Problem statements:
-- **Domain specialist** — `lens=domain`: runs the stateful/security footgun checklist + flags vacuous-green DoD.
-- **Bug-class sweep agent** — a dedicated concurrent `general-purpose` agent: given the plan's defect patterns, grep the repo for siblings, return every site.
+**High-risk plan — three seats:** add a domain specialist when the plan touches SQL/migration/RLS, auth/session, money/entitlement, native/permissions, process lifecycle, or irreversible data changes. The specialist also runs the bug-class sweep.
 
-Pure UI/logic/refactor with none of those surfaces → always-on seats only.
+Use at most one external headless reviewer per gate. Prefer qualified Cursor CLI `agent`; use another available provider only as fallback. Review seats are read-only and advisory. Follow [references/external-reviewers.md](references/external-reviewers.md).
 
 **Merge:** dedupe across seats (same file:line + issue = one). A finding from ANY single seat counts — do not require consensus. Conflicts (one seat clears it, another flags) → adjudicate by reading the code yourself.
 
@@ -117,11 +135,18 @@ Pure UI/logic/refactor with none of those surfaces → always-on seats only.
 3. **Verify** against the actual codebase — is the claim correct? If you cannot easily verify it, say so before deciding.
 4. **Decide:** if correct, apply the fix to the plan. If wrong, push back with technical reasoning — do not blindly implement.
 
-Fix every verified finding regardless of severity. Update the plan file.
+Fix every verified finding regardless of severity. Route plan edits back to the planner; the orchestrator adjudicates and tracks closure but does not silently author plan content.
 
 **Forbidden:** "You're absolutely right" / "Great point" / "Excellent feedback" / blind implementation. State the fix in the plan, not gratitude — actions on the plan show you heard the feedback.
 
-**When to re-review:** If fixes are substantial (structural changes, new phases, changed approach) OR touch a stateful/security surface, re-dispatch the panel (same composition rules, parallel — one wall-clock pass). Minor non-behavioral fixes (wording, constants, NTH notes) → no re-review.
+### Bounded review rounds
+
+- **Round 1:** exhaustive review of the whole plan.
+- **Round 2:** verify closure of Round 1 finding IDs and their affected surface only. Do not restart an open-ended review.
+- Fix any new verified defect found in the affected surface regardless of severity. Use targeted owner proof for low/medium closure. A third independent round is allowed only for a newly introduced critical/high defect. Record the exception.
+- If the same claim fails twice, stop re-running the panel. Run a targeted diagnostic against that claim and evidence.
+
+Minor non-behavioral fixes that do not affect a finding's proof need no Round 2.
 
 ---
 
@@ -136,7 +161,7 @@ Present a concise summary and **STOP**. Include:
 
 ### Approval gate
 
-**Do not proceed until explicitly approved.**
+**Do not proceed until explicitly approved, unless the caller already provided approval for this plan or roadmap.**
 
 | Caller says | Meaning |
 |-------------|---------|
@@ -150,27 +175,31 @@ If the caller provides feedback, update the plan and re-present. A re-review is 
 
 **Shortcut:** If the user provides a previously-approved plan file path and says to execute it (e.g., "implement plans/foo.md"), skip to Stage 4.
 
+Record pre-authorized policy once: uninterrupted execution, main/branch choice, milestone commits, push/PR authority, and approval scope. Do not ask again for an action already authorized. New authority is still required for destructive or externally visible actions outside that policy.
+
 ---
 
 ## Stage 4 — Implement (sub-agent)
 
-**Dispatch a sub-agent** to run the `phased-implement` skill against the approved plan file.
+**Dispatch one implementation owner per slice** to run the `phased-implement` skill against the approved plan file.
 
-- The implementer executes all phases end-to-end, verifying each phase's DoD before proceeding.
+- The owner executes the slice end-to-end, handles later QA fixes for that slice, and verifies DoD before proceeding.
 - No additional user approval gates between phases.
 - The implementer reports back: per-phase results, deviations, verification evidence.
+- Use checkpointed probes and the verification pyramid. Do not rerun a full qualification matrix to diagnose one probe.
 
-### If the implementer reports a blocker
+### If the implementer reports a routing status
 
-- Assess: is it a plan problem or an environment problem?
-- If plan problem: update the plan, re-dispatch the implementer for remaining phases.
-- If environment problem: escalate to the user.
+- `IMPLEMENTATION_DETAIL` → owner adapts and verifies.
+- `EMPIRICAL_DELTA` → planner records the evidence-backed delta; owner resumes affected slice.
+- `ARCHITECTURE_WRONG` → stop affected slice and re-plan. Keep independently completed work.
+- `ENVIRONMENT_BLOCKED` → escalate only after bounded diagnostics identify the required external change.
 
 ---
 
 ## Stage 5 — QA (sub-agent)
 
-**Dispatch a sub-agent** to run the `phased-qa` skill against the plan file.
+**Dispatch a fresh QA agent** to run the `phased-qa` skill against the plan file. Optionally run one external read-only seat in the same parallel wave.
 
 - It MUST be a different sub-agent than the implementer — fresh perspective on the completed work.
 - The QA agent verifies all phases against the plan's objectives and DoD, runs commands, reads code, and returns findings.
@@ -184,7 +213,14 @@ If the caller provides feedback, update the plan and re-present. A re-review is 
 3. Verify against the actual codebase — is the claim correct?
 4. Decide: fix, push back with reasoning, or escalate.
 
-Fix every verified finding, regardless of severity. After fixing, re-run tests and type checks to verify no regressions — fresh runs, not cached output.
+Fix every verified finding, regardless of severity. Route fixes to the slice's implementation owner. After fixing, re-run the affected checks and then the milestone gate. Do not repeat unrelated expensive probes.
+
+### Bounded QA rounds
+
+- **Round 1:** exhaustive diff, DoD, integration, and cleanliness audit.
+- **Round 2:** verify named Round 1 finding IDs and affected regression surface only.
+- Fix any new verified defect found in that surface regardless of severity. Use targeted owner proof for low/medium closure. A third independent round is allowed only for a newly introduced critical/high regression. Record the exception.
+- Evidence may be reused only when its fingerprint matches commit, diff, plan, tool version, configuration, and inputs. Otherwise rerun it.
 
 **Forbidden:** "You're absolutely right" / "Great catch" / blind implementation. State the fix, not gratitude.
 
@@ -207,7 +243,8 @@ After the final report, decide on integration. Skip when the user has already ta
 |-----------|---------------|
 | Uncommitted changes from the implement stage and the plan said "commit at end" | Confirm scope with the user, then commit. Use HEREDOC for the message |
 | Work is on a feature branch and the user wants integration | Offer: merge to main, open PR, or leave for review. Wait for explicit choice |
-| Work is on `main` | Stop. Work shouldn't have been on main. Flag and ask the user how to proceed |
+| Work is on `main` and user pre-authorized main | Continue; commit only at the authorized milestone boundary |
+| Work is on `main` without authorization | Stop and ask how to proceed |
 | The user has already said "I'll handle the commit" | Skip. Stop at the QA report |
 
 **Never** push, force-push, merge, or create a PR without explicit user approval at this stage. The QA report is a valid stopping point — ending there is the default unless the user pre-authorized the next step.
@@ -226,6 +263,8 @@ After the final report, decide on integration. Skip when the user has already ta
 | Proceed with unfixed findings | Every severity matters |
 | Reuse a sub-agent across stages | Fresh context = independent perspective |
 | Force through a blocker instead of escalating | Guessing compounds errors |
+| Repeat a full suite or qualification matrix to diagnose one stable failure | Run the smallest targeted check after two identical failures |
+| Leave child processes, sockets, or temporary credentials after cancellation | Follow bounded shutdown and cleanup audit in execution-controls reference |
 
 ---
 
@@ -233,12 +272,20 @@ After the final report, decide on integration. Skip when the user has already ta
 
 | Stage | Skill | What to provide | What to expect back | Valid status codes |
 |-------|-------|----------------|---------------------|--------------------|
-| 1. Plan | `phased-plan` | Task requirements, project context | Plan file path, phase summary | `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` / `BLOCKED` |
+| 1. Plan | `phased-plan` | Task requirements, project context | Plan file path, phase summary | `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` / `ARCHITECTURE_WRONG` / `ENVIRONMENT_BLOCKED` |
 | 2. Review | `phased-review` | Plan file path | Findings with severity, go/no-go, restated intent | `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` |
-| 4. Implement | `phased-implement` | Plan file path | Per-phase results, deviations, fresh verification evidence | `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` / `BLOCKED` / `PLAN_WRONG` |
+| 4. Implement | `phased-implement` | Plan file path | Per-phase results, deviations, fresh verification evidence | `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` / `ARCHITECTURE_WRONG` / `EMPIRICAL_DELTA` / `IMPLEMENTATION_DETAIL` / `ENVIRONMENT_BLOCKED` |
 | 5. QA | `phased-qa` | Plan file path | Findings with severity, per-phase pass/fail, fresh verification evidence | `DONE` / `DONE_WITH_CONCERNS` / `NEEDS_CONTEXT` |
 
 If a sub-agent's report doesn't carry a valid status code, ask it to commit to one before acting on the report.
+
+## Operational control loop
+
+At every stage boundary record elapsed time, model/tool calls, completed gates, open finding IDs, active blocker, and next action. Set an expected time/call budget before dispatch. Exceeding it triggers strategy reassessment, not an approval stop: narrow the scope, switch to targeted diagnostics, replay a checkpoint, or change the model/provider.
+
+For work lasting more than 30 minutes, send periodic status updates with current slice, elapsed time, completed evidence, blocker, and budget deviation. Never leave the user unable to distinguish progress from a stuck command.
+
+Follow active-command cancellation, evidence fingerprinting, verification-pyramid, and local parity rules in [references/execution-controls.md](references/execution-controls.md).
 
 ---
 

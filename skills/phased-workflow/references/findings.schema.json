@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "phased-workflow-findings",
+  "description": "Provider-neutral finding shape for plan-review and QA seats.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "findings"],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["go", "no-go"]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "source", "file", "line", "severity", "category", "summary", "failure_scenario", "evidence"],
+        "properties": {
+          "id": {"type": "string"},
+          "source": {"type": "string"},
+          "file": {"type": "string"},
+          "line": {"type": "integer", "minimum": 0},
+          "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "nit"]},
+          "category": {"type": "string"},
+          "summary": {"type": "string"},
+          "failure_scenario": {"type": "string"},
+          "evidence": {"type": "string"}
+        }
+      }
+    }
+  }
+}

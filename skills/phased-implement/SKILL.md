@@ -1,12 +1,11 @@
 ---
 name: phased-implement
-version: "1.2.0"
-description: "Execute an approved phased plan. Follow the plan, track files, run the verification gate, run cleanliness self-check, report with formal status codes. Evidence before claims. Triggers: phased-implement, /implement"
-metadata:
-  tags: implementation, execution, verification
+description: "Execute an approved phased plan as an implementation-slice owner using TDD, checkpointed probes, targeted diagnostics, a verification pyramid, process cleanup, evidence fingerprints, and formal routing statuses. Use for phased-implement or /implement requests."
 ---
 
 # Phased Implement
+
+**Suite contract:** 4.0.0
 
 ## Overview
 
@@ -29,6 +28,8 @@ Trigger phrases: `phased-implement`, `/implement`
 1. Read the plan file.
 2. Review critically — does anything look wrong now that you're about to implement it? If you see a problem the review didn't catch, raise it before starting.
 3. Extract the file list across all phases — this is your scope tracker.
+4. Extract approval scope, main/branch policy, commit boundaries, check classifications, slice budget, and parallel-safety contract.
+5. For external/native/long-running work, read the discovery receipt before editing. Missing load-bearing evidence returns `NEEDS_CONTEXT`.
 
 ### Step 2 — Execute each phase
 
@@ -38,9 +39,9 @@ For each phase, follow this cycle:
 
 Read the phase's "Files changed" list. These are the files you will touch — no more, no less (unless you discover something, see 2c).
 
-**2b. Implement**
+**2b. Implement as slice owner**
 
-- Follow the plan's approach. The plan has implementation-ready code — use it as your starting point, but adapt to what you actually find in the code.
+- Follow the plan's approach and precision tier. Apply Exact-tier code/contracts literally unless live evidence proves an `EMPIRICAL_DELTA`. For Structured/Intent steps, preserve pinned signatures, invariants, patterns, tests, and acceptance behavior without speculative expansion.
 - Track which files you've changed. Every file in "Files changed" must be touched before the phase is done.
 - If the plan's code snippets don't match what's in the codebase (e.g., line numbers shifted, function signatures changed), adapt — but stay within the plan's intent.
 
@@ -67,19 +68,33 @@ When implementation reveals something the plan didn't anticipate:
 |-----------|--------|
 | Small fix, clearly in scope (e.g., adjacent import needs updating) | Fix it. Note the deviation in your phase report. |
 | Related issue, out of scope (e.g., nearby function has same problem) | Document as NTH. Don't fix. Don't silently ignore. |
-| Plan is wrong (e.g., approach won't work, file doesn't exist) | **Stop.** Update the plan file with what you found. Then continue from the updated plan. Call out the delta in the final report. |
-| Blocker (e.g., missing dependency, unclear requirement, persistent failure) | **Stop.** Report the blocker. Do not guess or force through. |
+| Local path/signature/detail drift with unchanged architecture | Adapt, verify, report `IMPLEMENTATION_DETAIL`, continue. |
+| Observed external behavior differs but architecture remains valid | Record probe evidence, return `EMPIRICAL_DELTA`, obtain plan delta, resume this slice. |
+| Approved architecture cannot satisfy the objective | Stop affected slice. Return `ARCHITECTURE_WRONG`. Preserve completed independent slices. |
+| Credentials, dependency, service, permission, or host state blocks work | Run bounded diagnostics. Return `ENVIRONMENT_BLOCKED` with exact unblock requirement. |
 
 **Never silently deviate from the plan.** Every deviation is either documented (small fix, NTH) or escalated (plan wrong, blocker).
 
-**2d. Verify — the verification gate**
+**2d. Verify — classification, pyramid, and evidence gate**
+
+Classify each plan check before running it:
+- `REQUIRED` — must pass for the slice/milestone to complete.
+- `CONDITIONAL` — must pass when its documented trigger applies; record N/A evidence otherwise.
+- `ADVISORY` — collect when budget permits; failure or resource ceiling cannot block completion.
+
+Use this verification pyramid:
+1. **Edit loop:** smallest affected test/check after each logical edit.
+2. **Slice gate:** affected subsystem tests plus relevant type/lint/behavioral checks.
+3. **Milestone gate:** full suite once after slice findings close.
+
+Do not run the full suite after every small edit. Do not downgrade a required check because it is expensive.
 
 Before claiming any DoD item passes, run this five-step gate. Skipping any step is not verification — it is a false claim.
 
 ```
 FOR each DoD item:
   1. IDENTIFY: What command or code read proves this claim?
-  2. RUN:      Execute the command (fresh in this session — never cached, never copied from a previous run)
+  2. RUN:      Execute the command, or reuse an exact fingerprint match
   3. READ:     Full output — exit code, count, errors, warnings
   4. COMPARE:  Does the output literally confirm the claim?
                  - YES → record as PASS with the exact output
@@ -89,7 +104,9 @@ FOR each DoD item:
 Skip any step = false claim.
 ```
 
-**The Iron Law:** No completion claims without fresh verification evidence. If you have not run the command in this session, you cannot claim it passes.
+**The Iron Law:** No completion claims without valid verification evidence. Fresh execution is the default. Reuse evidence only when commit, diff, plan, tool version, configuration, inputs, and probe ID all match. Record the fingerprint and receipt path.
+
+**Checkpoint expensive matrices:** assign stable probe IDs, persist one receipt per probe, support `--only <probe-id>` or equivalent, resume/replay completed probes, and run one final full matrix after targeted failures close. Never rerun a whole matrix solely to inspect one stable failure.
 
 **Red-green for bug-fix phases**
 
@@ -125,6 +142,8 @@ A test that has only ever shown green is not a regression test. Skipping this me
 
 Before claiming a phase is complete, run BOTH the mechanical scan (2e.1) and the conceptual checks (2e.2). If either fails, fix in this same phase before declaring done.
 
+> **Orchestrated by Hashus — trust the row's pinned rigor, don't re-derive it.** When your dispatch carries a CSV row's `notes` with `Pattern scan:` / `Blast radius:` sections (the Hashus path), those investigations were already done and reviewed upstream by Zayneb. The self-checks below become **compliance confirmations, not fresh investigations**: for "Existing patterns reused?" (2e.2), confirm you used the reuse target the row's `Pattern scan` already pinned (`reuse <X> at file:line`) — don't go re-search the codebase for a different equivalent. For the enumeration check (2e.1.5), the row's `Blast radius` already lists the sibling sites — confirm you touched each listed sibling rather than re-deriving the set from scratch. You still fix any real miss (a pinned sibling you didn't touch); you just don't repeat the upstream search. In direct `/implement` and redha runs there's no upstream pin, so run the searches in full.
+
 **2e.1 — Mechanical scan (run these grep commands, paste results in the phase report):**
 
 Each is one tool call. Run all of them; paste the output. Any non-zero hit must be fixed before claiming done — this catches the obvious-class issues that QA always reports if not caught upstream.
@@ -139,7 +158,19 @@ Scans (substitute `<src-glob>` and `<typecheck>` from above):
 - `git diff -U0 -- '<src-glob>' | grep -nE '#[0-9A-Fa-f]{3,8}\b'` → 0 hits expected (raw hex bypasses design tokens)
 - `git diff -U0 -- '<src-glob>' | grep -nE '(margin|padding|fontSize|borderRadius|gap|width|height):\s*[0-9]'` → must use design tokens / constants, not raw numbers (skip if not a styled-UI codebase)
 - `git diff -U0 -- '<src-glob>' | grep -nE 'console\.log|// TODO:|// eslint-disable|debugger'` → 0 hits expected. If the project documents a separate `// DEFERRED:` (or equivalent) prefix as the legitimate backlog marker, that prefix is exempt from this scan.
-- `<typecheck>` → exit 0
+- `<typecheck>`: run it. You own this whole wave's diff and there are no other implement agents in the tree (one implement agent per wave under Hashus; waves run sequentially, earlier waves already committed) — so a whole-project typecheck reflects your own work on top of committed waves, with no in-flight sibling diffs to produce false positives. A whole-project typecheck is appropriate here (in direct `/implement` and redha runs too). Wave QA re-runs whole-system checks after the wave, so this is a fast upstream catch, not the only gate.
+
+**2e.1.5 — Enumeration check for finding-class-specific patterns (mandatory)**
+
+The generic scans above catch raw values + dead code, but they don't catch the most common upstream-miss class: implementer touched only the cited `scope_candidates` and missed sibling sites that share the same pattern. Three finding-classes have specific enumeration requirements — run the applicable greps and paste results in the phase report.
+
+| Finding-class trigger | Enumeration check (run before claiming DONE) | Rationale |
+|---|---|---|
+| **Type / interface / shape change** (you added a field, narrowed a type, renamed a property, changed a discriminated union variant) | `grep -rn '<type-name>' <src-glob>` AND `grep -rn '<changed-field-name>' <src-glob>` — read every match. For each match, verify the constructor / usage was updated. List unchanged-but-affected sites in the report. | The most common fix-loop trigger: 3 cited files updated, 13 sibling constructors silently bypass type narrowing via `Record<string, unknown>` or `as any`. Catching this upstream eliminates a 7-min fix loop. |
+| **Instrumentation / observability / error-path / 4xx-5xx-status-code addition** (you added a log, metric, error handler, status-code path) | `grep -rn '<sibling-symbol>' <src-glob>` for every sibling call site of the function/handler you instrumented — e.g. if you added a 429 handler at `consumeGenerationCredit`, grep for every other place that consumes credits or hits the cap. Confirm the sibling site is either (a) already-instrumented OR (b) explicitly out-of-scope with a one-line `notes`-style reason. | The 2nd most common miss: implementer instruments one entry path, misses the read-only / preview / cache-validation entry. |
+| **First-time vendor / SDK API call** (you wrote a call to an external library you haven't touched before in this codebase) | Read the SDK's type definition (or docstring) for the function. Paste the exact signature in the phase report. Verify your call site's argument order, optional params, and return-type handling match. | Catches "I wrote the args from memory" — e.g. reversed `posthog.alias(distinctId, alias)` vs `posthog.alias(alias, distinctId)`. SDK signatures aren't intuitive and shouldn't be guessed. |
+
+If your diff has none of the three triggers, note `Enumeration check: N/A (no type / instrumentation / new-vendor-API change)` in the report. If a trigger fires and you skip the check, your phase fails the self-check.
 
 If running in disk-first mode under Hashus / Redha orchestration, the contract pasted into your dispatch may include additional or modified scans — follow the dispatch contract verbatim.
 
@@ -169,7 +200,7 @@ Only after all DoD items pass with evidence. Report:
 - Any NTH items discovered
 - Any plan deviations and why
 
-### Step 3 — Handle failures
+### Step 3 — Handle failures with bounded diagnosis
 
 When something goes wrong during implementation:
 
@@ -179,18 +210,18 @@ When something goes wrong during implementation:
 3. If the plan's approach caused the failure, the plan is wrong — stop and update it.
 4. Fix the issue. Re-run verification. Do not move on until the phase passes.
 
-**Multiple fix attempts failing (3+):** Stop guessing. Run the root-cause checklist before attempt 4:
+**Same failure twice:** stop full reruns and repeated fixes. Record the stable failure signature and a falsifiable hypothesis. Run the root-cause checklist before another edit:
 
 1. **Re-read the failure end-to-end** — the error message often names the cause. Have you actually read every line, or only skimmed the headline? Read the stack trace top-to-bottom.
 2. **Trace the data path** — what runs before this? What state is set? What is *actually* being passed in vs. what the code assumes? Add a single targeted log if needed to confirm.
-3. **Check the original code** — has the file changed since the plan was written? Different line numbers, signatures, or structure? If yes, the plan is stale (`PLAN_WRONG`).
+3. **Check the original code** — has the file changed since the plan was written? Different line numbers, signatures, or structure? Route local drift as `IMPLEMENTATION_DETAIL`; route invalidated assumptions as `EMPIRICAL_DELTA`.
 4. **Bisect your change** — revert your last edit. Does the failure go away?
    - YES → the last edit caused it. Look at it again with fresh eyes.
    - NO  → the failure precedes your changes. The bug is upstream of this phase.
 5. **Search for the pattern elsewhere** — has someone already solved a similar failure in this codebase? `grep` for the error message, key symbol, or stack frame. Reuse the existing solution.
 6. **Re-read the assumption** — the plan's approach assumed something. Is that assumption actually true in this code? (Type shape, async ordering, lifecycle, cache invalidation, etc.)
 
-If after the checklist you still can't fix it, escalate with `BLOCKED` and report the findings — never guess past attempt 3.
+If the checklist disproves the architecture, return `ARCHITECTURE_WRONG`. If live behavior only changes a plan assumption, return `EMPIRICAL_DELTA`. If external state blocks progress, return `ENVIRONMENT_BLOCKED`. Never repeat an unchanged full command hoping for a different result.
 
 **Never:**
 - Add a quick hack to make a test pass without understanding why it failed
@@ -212,7 +243,7 @@ If after the checklist you still can't fix it, escalate with `BLOCKED` and repor
 | You're tempted to skip a "trivial" DoD item | Check it. Trivial items break too. |
 | You used a raw number, hex, or string where a token/constant exists | Replace it with the token. No exceptions without a documented reason. |
 | You wrote a new helper/component without searching for an existing one | Stop. Search first. Reuse what's there. |
-| 3+ fix attempts on the same issue | Stop guessing. Re-analyze or escalate. |
+| Same failure twice | Stop full reruns. Write a hypothesis and run a targeted diagnostic. |
 
 ---
 
@@ -225,8 +256,10 @@ Every phase report and the final report must commit to one status code. Use the 
 | `DONE` | All DoD items verified PASS with fresh evidence; cleanliness self-check passed |
 | `DONE_WITH_CONCERNS` | DoD passed but you flagged scope creep, risk, file size, or other observations the orchestrator should see |
 | `NEEDS_CONTEXT` | Cannot complete without information not in the plan |
-| `BLOCKED` | Hit a wall after the root-cause checklist — environment, dependency, or unclear requirement |
-| `PLAN_WRONG` | The plan contains an error that prevents implementation. Propose the plan edit and stop |
+| `ARCHITECTURE_WRONG` | Approved approach cannot meet the objective. Propose architecture correction and stop affected slice |
+| `EMPIRICAL_DELTA` | Live evidence changes a plan assumption without invalidating architecture. Record receipt and proposed delta |
+| `IMPLEMENTATION_DETAIL` | Local implementation detail drifted. Adapted and verified without changing architecture |
+| `ENVIRONMENT_BLOCKED` | External environment prevents progress after bounded diagnostics. State exact unblock requirement |
 
 A report without a status code is not a valid report — pick one.
 
@@ -240,12 +273,15 @@ A report without a status code is not a valid report — pick one.
 - NTH items discovered
 
 **Final summary:**
-- **Overall status code** (the worst code across phases — e.g., one `BLOCKED` phase ⇒ overall `BLOCKED`)
+- **Overall status code** (the worst code across phases — e.g., one `ENVIRONMENT_BLOCKED` phase ⇒ overall `ENVIRONMENT_BLOCKED`)
 - Per-phase status codes
 - Plan deviations summary
 - Cleanliness fixes applied during self-check
 - Unresolved items (zero on overall `DONE`; documented otherwise with the reason)
 - **Auto-decisions made during execution** (any non-trivial choice between two valid implementations — option chosen + reasoning + risk taken; empty if none)
+- Evidence fingerprints and checkpoint receipts
+- Budget: estimated vs actual time/tool calls, plus strategy changes
+- Process cleanup result for external/native commands
 
 ---
 
@@ -265,7 +301,7 @@ When the dispatch prompt provides a `report-target=<path>` directive (or any equ
    tldr: <≤200 token summary — what was built, key evidence pointer, file count touched>
    ```
 
-   For non-`DONE` statuses (`BLOCKED`, `PLAN_WRONG`, `NEEDS_CONTEXT`, `DONE_WITH_CONCERNS`), include one extra line:
+   For non-`DONE` statuses (`ARCHITECTURE_WRONG`, `EMPIRICAL_DELTA`, `ENVIRONMENT_BLOCKED`, `NEEDS_CONTEXT`, `DONE_WITH_CONCERNS`), include one extra line:
 
    ```
    concerns: <N> findings, see report     # or: blocked: <one-line cause>
@@ -273,9 +309,23 @@ When the dispatch prompt provides a `report-target=<path>` directive (or any equ
 
 3. Returning more than ~300 tokens of inline text is a contract violation. The disk file is the source of truth; the return message is just the index. The orchestrator (Hashus) has its own context to protect — dumping the full report inline AND on disk doubles its context cost without adding any auditable value.
 
-**Verifying disk-first mode is in effect:** if the dispatch prompt mentions a path under `plans/run-reports/` or instructs you to write a report to a specific file, you are in disk-first mode. When in doubt, the orchestrator checks `test -s <path>` after your return — an empty or missing file is treated as `BLOCKED` regardless of your status code.
+**Verifying disk-first mode is in effect:** if the dispatch prompt mentions a path under `plans/run-reports/` or instructs you to write a report to a specific file, you are in disk-first mode. When in doubt, the orchestrator checks `test -s <path>` after your return — an empty or missing file is treated as `ENVIRONMENT_BLOCKED` regardless of your status code.
 
 **When disk-first mode is NOT in effect** (no `report-target` directive in the dispatch prompt): use the inline format described in the **Output Contract** above. This is the default for direct user invocations of `/implement`.
+
+---
+
+## Process lifecycle and pre-authorization
+
+For commands that can spawn workers, servers, sockets, or child processes:
+- Record command, PID/process group, temporary paths, sockets, and cleanup owner before waiting.
+- On cancellation, send interrupt to the process group, wait a bounded interval, escalate termination only for owned processes, then verify no owned process/socket/temp secret remains.
+- Never kill unrelated processes by name alone.
+- Preserve an interruption receipt so the slice can resume without repeating completed work.
+
+Honor recorded execution policy. If main and milestone commits were pre-authorized, continue and commit at those boundaries without reopening approval. Never infer push, PR, force-push, destructive reset, or external publication authority.
+
+For work lasting more than 30 minutes, report current slice, elapsed time, completed gates, stable blocker if any, and next action. Exceeding the slice budget triggers strategy reassessment, not silent continuation.
 
 ---
 

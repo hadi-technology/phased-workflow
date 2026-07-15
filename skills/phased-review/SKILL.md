@@ -1,12 +1,11 @@
 ---
 name: phased-review
-version: "2.3.0"
-description: "Pre-implementation plan review. Evaluates a phased plan against the actual codebase — verifies patterns, values, preconditions, blast radius, and YAGNI before any code is written. Triggers: phased-review, /prv, prv:"
-metadata:
-  tags: review, planning, architecture, qa, maintainability
+description: "Review phased plans against the live codebase using risk-scaled precision, empirical evidence, blast-radius checks, and bounded named-finding closure. Use for phased-review, /prv, or prv: requests."
 ---
 
 # Phased Review
+
+**Suite contract:** 4.0.0
 
 ## Overview
 
@@ -29,6 +28,8 @@ Trigger phrases: `phased-review`, `phased review`, `/prv`, `prv:`
 1. Get the plan file path (ask if not provided).
 2. Read the plan. Extract per phase: objectives, scope, approach, files changed, DoD (functional + code), and any specified QA/test gates.
 3. Note assumptions and dependencies between phases.
+4. Read the dispatch's `review-round` value. Default to `1`.
+5. For Round 2, load the Round 1 finding IDs and their required closure evidence.
 
 ### Step 1.5 — Restate the plan's intent
 
@@ -38,6 +39,20 @@ Before reading the codebase, write 1–2 sentences capturing what the plan claim
 - If your restatement diverges from what the plan literally says, you may be assuming. Re-read the plan and reconcile.
 - The restatement is your reference point during Steps 2–4: ask "does this code/finding align with the stated intent?" rather than "does it match my assumption of the intent?"
 - Carry the restated intent through to the Final Recommendation so the orchestrator and approver can see what you reviewed against.
+
+### Step 1.6 — Lens (panel mode)
+
+The dispatch may name a `lens`. If it does, lead with that stance (still run the base checks):
+- `lens=verifier` (or unset) — default: is each claim correct against the code?
+- `lens=adversary` — assume the plan is wrong/incomplete. How does this break, what second-order effect does each change trigger, what did the author not consider? Find what a verifier would wave through.
+- `lens=domain` — stateful/security specialist: run Steps 3j–3l below in full.
+
+### Step 1.7 — Round boundary
+
+- **Round 1:** audit the entire plan and report every verified finding, regardless of severity.
+- **Round 2:** verify named Round 1 finding IDs, changed plan sections, and affected evidence only. Do not restart whole-plan review.
+- Report and fix any new verified defect in that affected surface regardless of severity. Use targeted planner proof for low/medium closure. Mark a new critical/high issue `ROUND2-REGRESSION`.
+- Never request a third open-ended review. A third independent pass is limited to critical/high `ROUND2-REGRESSION` closure.
 
 ### Step 2 — Read the codebase (before judging)
 
@@ -60,15 +75,22 @@ For any numeric value in the plan (heights, timeouts, thresholds, sizes):
 - Flag values asserted without evidence.
 - Flag fixed constants used for variable-sized content (e.g., `overrideItemLayout` with a fixed height for a component whose height depends on content).
 
-**3b. Code snippets — check completeness**
+**3b. Precision tiers — check completeness at the right risk level**
 
-Every code block in the plan must be copy-pasteable into the codebase:
+Verify each step declares Exact, Structured, or Intent precision:
+- **Exact:** require copy-pasteable code/commands for public interfaces, schemas, migrations, security controls, process lifecycle, irreversible operations, provider command contracts, and acceptance assertions.
+- **Structured:** require signature, control flow, invariants, cited reuse target, tests, and forbidden alternatives.
+- **Intent:** allow exact transformation plus proof only when reasonable local choices cannot change behavior.
+
+For Exact-tier blocks:
 - Flag placeholder comments: `/* deps */`, `/* TODO */`, `...`, TBD
 - Flag incomplete dependency arrays (empty `[]` when the closure captures values)
 - Flag unspecified type parameters
 - Flag "similar to Task N" without repeating the code
 - Flag shell commands that omit the working directory (must prefix with `cd <dir> &&` when project root differs from where config files like `package.json`, `.eslintrc.js`, `tsconfig.json` live)
 - Flag type casts (`as SomeType`, `as unknown as SomeType`) that aren't traced to the actual type definition. The reviewer must read the type definition, confirm the types are compatible without the cast, and cite the definition location.
+
+Flag over-specification when a plan writes full internal production code for a Structured/Intent step without adding contract certainty. The required plan change is to pin invariants and proof, not preserve speculative code.
 
 **3c. Optimization preconditions — verify effectiveness**
 
@@ -148,6 +170,25 @@ Match outside `scope_candidates` = critical finding. Filenames survive in non-im
 
 **Cost / payoff.** For a 50-row CSV, these 5 checks add roughly 30–60 tool calls (~10K–20K tokens) and 1–2 min wall clock. They catch the largest known Pass-1 miss class: ~7 of 9 issues that historically only surfaced in Pass 2. Skipping them is the single biggest source of "Pass 1 said clean, Pass 2 found 3 criticals."
 
+**Round 2 carve-out:** do not repeat all five checks. Run only checks that prove named findings closed or that cover a critical/high regression introduced by a fix.
+
+**3j. Bug-class sweep (domain lens / any security or correctness finding)**
+
+A finding is one instance of a class. Abstract it to a greppable pattern, grep the source roots, read each hit, classify same-bug / safe / false-positive. Every unfixed same-bug sibling = finding at the class's severity. (Project rule: "fix all instances.")
+
+**3k. Stateful/security footgun checklist (domain lens)**
+
+| Area | Verify | Silent failure |
+|------|--------|----------------|
+| Postgres RLS | A GRANT does NOT grant row visibility — a POLICY must permit role+command. Verify a policy exists per (role, command) used. | Drop the only anon policy → anon reads return 0 rows; grep-DoD passes green. |
+| SECURITY DEFINER fn | `auth.uid()` guard if it takes a caller-supplied id; `SET search_path`; sweep siblings (3j). | IDOR. |
+| Forward migration | Patches the LATEST def (grep all redefinitions; first def is usually stale); preserves non-target behavior verbatim. | Silently reverts later changes / drops return keys consumers read. |
+| Auth/session | Which role runs the call (anon vs authenticated)? Pre-sign-in runs as anon. | Locking to authenticated breaks anonymous path. |
+
+**3l. Vacuous-green DoD (domain lens)**
+
+Flag any behavioral/stateful/security DoD that asserts only a grep count — it proves the edit, not the behavior. Require an executable check (run as the target role, assert the result). A DoD that passes even if the fix were wrong = high-severity finding.
+
 ### Step 4 — Evaluate plan quality
 
 For each phase, verify:
@@ -160,6 +201,10 @@ For each phase, verify:
 | Sequencing | Does this phase depend on a prior one? Is the order right? |
 | Maintainability | Uses existing patterns? No new hardcoded values? No duplicate logic? |
 | Blast radius | What else could break? Is it documented? |
+| Discovery | Unstable external/native/security assumptions have empirical receipts |
+| Slicing | Each slice is independently verifiable, budgeted, and safe to parallelize or explicitly ordered |
+| Verification cost | Expensive matrices support targeted `--only`, resume/replay, fingerprinted receipts, and one final full pass |
+| Check class | Every DoD item is REQUIRED, CONDITIONAL, or ADVISORY; advisory failures do not block |
 
 **Review for excellence, not minimum viability.** A plan that "barely passes" will produce code that barely works.
 
@@ -172,6 +217,8 @@ For every issue found:
 4. **Code change guidance** — if the fix requires different implementation code, provide exact file paths and patch direction
 
 Do not leave any issue unaddressed. Do not omit low-severity findings — they compound.
+
+Assign stable finding IDs in Round 1. Round 2 reports each ID as `CLOSED` or `OPEN` with evidence. Severity does not change whether a verified finding must be fixed.
 
 ---
 
@@ -214,6 +261,7 @@ Do not leave any issue unaddressed. Do not omit low-severity findings — they c
 - Go / no-go
 - Required changes table (severity, phase, change) — no issue omitted
 - Updated DoD additions the plan should include
+- Review round and named-finding closure table
 
 ---
 
@@ -241,7 +289,7 @@ When the dispatch prompt provides a `report-target=<path>` directive (or any equ
 
 3. Returning more than ~300 tokens of inline text is a contract violation. The disk file is the source of truth; the return message is just the index. The orchestrator (Zayneb) has its own context to protect — for a CSV with 50 findings, dumping them inline would consume ~10K of orchestrator context per review pass, defeating the optimization.
 
-**Verifying disk-first mode is in effect:** if the dispatch prompt mentions a path under `plans/run-reports/` or instructs you to write a report to a specific file, you are in disk-first mode. The orchestrator checks `test -s <path>` after your return — an empty or missing file is treated as `BLOCKED` regardless of your status code.
+**Verifying disk-first mode is in effect:** if the dispatch prompt mentions a path under `plans/run-reports/` or instructs you to write a report to a specific file, you are in disk-first mode. The orchestrator checks `test -s <path>` after your return — an empty or missing file is treated as `ENVIRONMENT_BLOCKED` regardless of your status code.
 
 **When disk-first mode is NOT in effect** (no `report-target` directive in the dispatch prompt): use the inline format described in the **Output Contract** above. This is the default for direct user invocations of `/prv`.
 
