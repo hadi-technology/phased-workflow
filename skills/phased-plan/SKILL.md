@@ -5,7 +5,7 @@ description: "Write implementation-ready phased plans with empirical assumptions
 
 # Phased Plan
 
-**Suite contract:** 4.0.0
+**Suite contract:** 4.1.0
 
 ## Overview
 
@@ -135,6 +135,14 @@ Phases / rows using domain nouns without (a) or (b) are rejected at scaffolding.
 - Every change must leave the codebase cleaner or equally clean — never worse.
 
 **Discovery evidence:** [receipt path, or `not required` with reason]
+
+**Decision and evidence manifest:**
+
+| ID | Decision | Files/symbols | Source evidence | Reuse target | Blast-radius query + classified siblings | Acceptance proof | Risk | Invalidation conditions |
+|---|---|---|---|---|---|---|---|---|
+| `DEC-001` | [load-bearing choice] | [exact paths/symbols] | [file:line or receipt] | [existing pattern] | [command plus classified results] | [runnable or observable proof] | [standard/high] | [changes forcing fresh review] |
+
+Every load-bearing choice needs one stable manifest row. Planner evidence does not certify itself: reviewers independently validate each row against live code. Missing evidence, unclassified siblings, or changed invalidation inputs force fresh plan review.
 
 **Execution policy:** [approval scope, branch/main choice, milestone commit policy, uninterrupted-execution authorization]
 
@@ -302,6 +310,7 @@ Run this checklist before handing off. This is about the plan itself — not the
 11. **Type consistency** — types, method signatures, and property names used in later phases match what earlier phases defined.
 12. **Check classification** — every DoD item is REQUIRED, CONDITIONAL, or ADVISORY; advisory failure cannot block release.
 13. **Checkpointability** — every expensive matrix supports targeted rerun, replay, and one final full pass.
+14. **Decision manifest** — every load-bearing choice has a stable ID, live evidence, classified blast radius, acceptance proof, risk tier, and invalidation conditions.
 
 ### Step 5 — Handoff
 
@@ -309,6 +318,7 @@ Return the plan file path and a concise summary:
 - Phase list with objectives
 - Key risks or trade-offs
 - Any NTH items found during codebase mapping
+- Machine-readable stage telemetry required by `phased-workflow/references/execution-controls.md`
 
 ---
 

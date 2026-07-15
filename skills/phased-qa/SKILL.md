@@ -5,7 +5,7 @@ description: "Run post-implementation QA against a phased plan using exhaustive 
 
 # Phased QA
 
-**Suite contract:** 4.0.0
+**Suite contract:** 4.1.0
 
 ## Overview
 
@@ -31,6 +31,7 @@ Trigger phrases: `phased-qa`, `/pqa`, `pqa:`
 2. Parse each phase and extract: objectives, functional DoD, code DoD, and any specified verification commands.
 3. Build a checklist. Every DoD item becomes a line item to verify.
 4. Read `qa-round`. Default to `1`. For Round 2, load Round 1 finding IDs and closure evidence requirements.
+5. Load the decision and evidence manifest. Treat it as minimum coverage, not a trust boundary.
 
 ### Step 1.5 — Restate the phase intent
 
@@ -43,7 +44,7 @@ Before running a single command, write one sentence per phase capturing what the
 
 **Round 1 exhaustive-scan principle:** audit the ENTIRE diff. Do not stop at the first findings. Report every verified finding regardless of severity and assign a stable finding ID.
 
-**Round 2 closure principle:** verify named Round 1 finding IDs and their affected regression surface only. Do not restart whole-diff QA. Report and fix any new verified defect in that surface regardless of severity. Use targeted owner proof for low/medium closure. Tag a new critical/high regression `ROUND2-REGRESSION`; a third independent pass is limited to its closure.
+**Round 2 closure principle:** verify named Round 1 finding IDs and their affected regression surface only. Do not restart whole-diff QA. Documentation/format-only remediation with unchanged executable proof may use targeted owner evidence. Executable behavior, test assertions, shared interfaces, public contracts, acceptance evidence, integration paths, and high-risk remediation require two independent targeted closure lenses regardless of severity. Report and fix any new verified defect in that surface. Tag a new critical/high regression `ROUND2-REGRESSION`; a third independent pass is limited to its closure.
 
 In Round 1, scan the entire diff for raw hex/hardcoded style values, dead logging/backlog markers/debuggers, out-of-scope files, dead imports, misplaced constants, and naming drift. Report all severities. Every verified finding must be fixed before final acceptance.
 
@@ -69,7 +70,7 @@ FOR each DoD item:
 Skip any step = false claim.
 ```
 
-**The Iron Law:** No QA pass claims without valid evidence. Fresh execution is the default. Reuse only when commit, diff, plan, tool version, configuration, inputs, and probe ID match exactly. Record fingerprint and receipt path.
+**The Iron Law:** No QA pass claims without valid evidence. Standard QA remains fresh and exhaustive. Implementer reports or receipts never substitute for fresh release-blocking QA evidence. Same-owner checkpoint reuse requires exact commit, diff, plan, tool, configuration, input, and probe fingerprints plus a durable receipt whose payload hashes reverify.
 
 For expensive matrices, use stable probe IDs, per-probe receipts, `--only` or equivalent targeted runs, and resume/replay. Run one final full matrix after targeted failures close.
 
@@ -183,10 +184,11 @@ For every issue:
 3. **Evidence** — the command output, file path, or code that proves the issue
 4. **Remediation** — exact file path + concrete patch suggestion (do NOT implement — report only)
 5. **Finding ID** — stable across fix and closure rounds
+6. **Lifecycle** — `OPEN`, remediation required, then `CLOSED` only with closure evidence
 
 **Do not fix unless explicitly asked.** Report findings with enough detail that someone else can fix them.
 
-Round 2 reports every Round 1 finding ID as `CLOSED` or `OPEN` with evidence. Severity never makes a verified finding optional.
+Round 2 reports every Round 1 finding ID as `OPEN`, `REMEDIATED`, or `CLOSED`, with remediation and closure evidence. Severity never makes a verified finding optional. Final acceptance requires zero open findings.
 
 ---
 
@@ -229,6 +231,8 @@ For each phase:
 - Evidence fingerprints and checkpoint receipts
 - External/native process cleanup audit
 - Estimated vs actual time/tool-call budget
+- Successful-command summaries: command, exit code, counts, duration, fingerprint, durable receipt path, byte count, and SHA-256. Store raw success output once; retain complete failing output in the report and receipt
+- Machine-readable stage telemetry required by `phased-workflow/references/execution-controls.md`
 
 ---
 
@@ -238,7 +242,7 @@ When the dispatch prompt provides a `report-target=<path>` directive (or any equ
 
 **Behavior in disk-first mode:**
 
-1. Write the full Per-Phase QA and Final Summary (everything described in **Output Contract** above) to `<path>` using the Write tool. The disk file is the source of truth — it must contain every Verification Gate row (claim → command → output snippet), every finding with severity + evidence + remediation, exactly as the contract above specifies. The Iron Law, the verification gate, and the "report findings with enough detail that someone else can fix them" rule all apply to the disk report's content unchanged. None of that detail goes in the return message.
+1. Write the full Per-Phase QA and Final Summary to `<path>`. Include every Verification Gate row as claim → command → result summary → durable receipt hash/path, and every finding with severity, lifecycle, evidence, and remediation. Store successful raw output once in receipts; include complete failing output in the report and receipt. The Iron Law and remediation rules remain unchanged.
 
 2. Your final return message contains ONLY:
 

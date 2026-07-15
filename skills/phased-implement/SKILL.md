@@ -5,7 +5,7 @@ description: "Execute an approved phased plan as an implementation-slice owner u
 
 # Phased Implement
 
-**Suite contract:** 4.0.0
+**Suite contract:** 4.1.0
 
 ## Overview
 
@@ -30,6 +30,7 @@ Trigger phrases: `phased-implement`, `/implement`
 3. Extract the file list across all phases — this is your scope tracker.
 4. Extract approval scope, main/branch policy, commit boundaries, check classifications, slice budget, and parallel-safety contract.
 5. For external/native/long-running work, read the discovery receipt before editing. Missing load-bearing evidence returns `NEEDS_CONTEXT`.
+6. Load the decision and evidence manifest. Confirm every decision ID used by the slice. Record compliance or deviation; a manifest never authorizes unreviewed scope.
 
 ### Step 2 — Execute each phase
 
@@ -104,7 +105,9 @@ FOR each DoD item:
 Skip any step = false claim.
 ```
 
-**The Iron Law:** No completion claims without valid verification evidence. Fresh execution is the default. Reuse evidence only when commit, diff, plan, tool version, configuration, inputs, and probe ID all match. Record the fingerprint and receipt path.
+**The Iron Law:** No completion claims without valid verification evidence. Fresh execution is the default. Reuse only same-owner evidence when commit, diff, plan, tool version, configuration, inputs, and probe ID all match. Agent prose is never evidence. Cross-stage receipts never substitute for fresh QA release evidence.
+
+Persist reusable receipts under the stable workflow run directory. Write raw output and metadata into a sibling staging directory, record command, exit code, timestamps, byte count, fingerprint, and SHA-256, verify the hash, then atomically rename to the final path. Before reuse, require the receipt and every payload to exist and reverify hashes. Missing, moved, truncated, or mismatched receipts invalidate reuse and force a rerun.
 
 **Checkpoint expensive matrices:** assign stable probe IDs, persist one receipt per probe, support `--only <probe-id>` or equivalent, resume/replay completed probes, and run one final full matrix after targeted failures close. Never rerun a whole matrix solely to inspect one stable failure.
 
@@ -267,10 +270,11 @@ A report without a status code is not a valid report — pick one.
 - **Status code** (one of the above)
 - What was changed (files touched, approach taken — actual, not planned)
 - Deviations from plan, with reasons
-- DoD verification results — each item with the command run and the full output (not claims, not summaries)
+- DoD verification results — each item with command, exit code, result counts, duration, fingerprint, durable receipt path, byte count, and SHA-256. Include complete output in report for failures; store successful raw output once in its receipt
 - Red-green regression evidence (bug-fix phases only) — the stash/restore output sequence
 - Cleanliness self-check results — each item answered with `PASS` or `FIXED-WITH: <what you fixed>`
 - NTH items discovered
+- Decision-manifest compliance and deviations
 
 **Final summary:**
 - **Overall status code** (the worst code across phases — e.g., one `ENVIRONMENT_BLOCKED` phase ⇒ overall `ENVIRONMENT_BLOCKED`)
@@ -282,6 +286,9 @@ A report without a status code is not a valid report — pick one.
 - Evidence fingerprints and checkpoint receipts
 - Budget: estimated vs actual time/tool calls, plus strategy changes
 - Process cleanup result for external/native commands
+- Finding lifecycle: every assigned QA finding reaches `REMEDIATED`; none may be silently deferred because severity is low
+- Successful-command summaries with durable receipt path/hash; full raw output once in receipt, full inline output only for failures
+- Machine-readable stage telemetry required by `phased-workflow/references/execution-controls.md`
 
 ---
 
@@ -291,7 +298,7 @@ When the dispatch prompt provides a `report-target=<path>` directive (or any equ
 
 **Behavior in disk-first mode:**
 
-1. Write the full per-phase report and final summary (everything described in **Output Contract** above) to `<path>` using the Write tool. The disk file is the source of truth — it must contain every command output, every cleanliness check, every NTH item, exactly as the contract above specifies. The Iron Law and verification gate apply to the disk report's content unchanged.
+1. Write the full per-phase report and final summary to `<path>`. Store successful raw command output once in durable receipts and put evidence summaries plus receipt hashes in the report. Include complete failing output, every cleanliness check, and every NTH item. The disk report remains the index and source of truth for claims; receipts are source of truth for raw successful output.
 
 2. Your final return message contains ONLY:
 

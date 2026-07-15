@@ -5,13 +5,17 @@ description: "Orchestrate plan → review → approve → sliced implementation 
 
 # Phased Workflow
 
-**Suite contract:** 4.0.0
+**Suite contract:** 4.1.0
 
 ## Overview
 
 Orchestrate a structured delivery: plan → review → approve → implement → verify. Each stage is a sub-agent with a fresh perspective. The orchestrator coordinates — it never writes plan content, implements code, or performs QA itself.
 
 **Core principle:** Independent eyes at decision boundaries. Keep one implementation owner per slice. Use separate reviewers and QA agents. Spend parallelism on independent work and correlated-risk reduction, not repeated derivation.
+
+**Quality invariant:** Every verified finding follows `OPEN → REMEDIATED → CLOSED` before final acceptance. Severity never makes remediation optional. `DONE` requires zero open verified findings.
+
+**Efficiency invariant:** Reuse validated decisions and durable same-owner evidence without weakening independent review or fresh QA. Do not repeat derivation solely because a new stage starts; re-derive whenever evidence is stale, scope changed, implementation deviated, or risk requires it.
 
 Read these references when their trigger applies:
 - External or headless reviewer seat: [references/external-reviewers.md](references/external-reviewers.md)
@@ -63,6 +67,22 @@ Every sub-agent reports back with one of these codes plus evidence. Branch on th
 
 ---
 
+## Finding lifecycle and closure depth
+
+Remediation is mandatory. Closure depth follows changed surface, not severity.
+
+| Remediation surface | Required closure |
+|---|---|
+| Documentation or formatting only; no executable code, contract, DoD, evidence, or integration change | Owner applies fix, records targeted proof, marks `REMEDIATED`, then orchestrator records `CLOSED`. No fresh panel required |
+| Executable behavior, test assertion, shared interface, public contract, acceptance evidence, integration path, or high-risk surface | Owner applies fix and marks `REMEDIATED`; two independent targeted lenses verify named finding plus affected regression surface before `CLOSED` |
+
+- Keep every finding in final report with remediation and closure evidence.
+- `DONE_WITH_CONCERNS` cannot hide an open verified finding.
+- Run final milestone gate after all findings are `CLOSED`.
+- Normalize cosmetic findings to `low`. Do not create a severity below `low`.
+
+---
+
 ## Stage 0 — Scope check (optional)
 
 Before dispatching the planner, judge whether the request is concrete enough to plan. Skip when the request is already well-formed.
@@ -100,6 +120,17 @@ Provide the sub-agent with:
 
 The sub-agent writes the plan, self-checks it, and returns the plan file path.
 
+The plan includes a decision and evidence manifest for every load-bearing choice:
+- Stable decision ID
+- Affected files and symbols
+- Source evidence and reuse target
+- Blast-radius query plus classified siblings
+- Acceptance proof
+- Risk tier
+- Invalidation conditions
+
+Reviewers independently validate the manifest against live code. Implementers record compliance or deviation. QA treats the manifest as minimum coverage, never as a trust boundary.
+
 ### Roadmaps, slices, and multi-file plans
 
 If the task is large, decompose it into independently verifiable slices before implementation. A slice should normally fit 30–90 minutes, leave the tree working, and have its own DoD. Parallelize only slices with disjoint write sets or an explicit integration owner.
@@ -135,7 +166,7 @@ Use at most one external headless reviewer per gate. Prefer qualified Cursor CLI
 3. **Verify** against the actual codebase — is the claim correct? If you cannot easily verify it, say so before deciding.
 4. **Decide:** if correct, apply the fix to the plan. If wrong, push back with technical reasoning — do not blindly implement.
 
-Fix every verified finding regardless of severity. Route plan edits back to the planner; the orchestrator adjudicates and tracks closure but does not silently author plan content.
+Set every verified finding to `OPEN`. Fix every finding regardless of severity. Route plan edits back to the planner; the orchestrator adjudicates and tracks closure but does not silently author plan content. Record remediation before closure.
 
 **Forbidden:** "You're absolutely right" / "Great point" / "Excellent feedback" / blind implementation. State the fix in the plan, not gratitude — actions on the plan show you heard the feedback.
 
@@ -143,7 +174,9 @@ Fix every verified finding regardless of severity. Route plan edits back to the 
 
 - **Round 1:** exhaustive review of the whole plan.
 - **Round 2:** verify closure of Round 1 finding IDs and their affected surface only. Do not restart an open-ended review.
-- Fix any new verified defect found in the affected surface regardless of severity. Use targeted owner proof for low/medium closure. A third independent round is allowed only for a newly introduced critical/high defect. Record the exception.
+- Documentation/format-only remediation with unchanged proof uses targeted owner evidence.
+- Executable, contract, shared-interface, acceptance-evidence, integration, or high-risk remediation uses two independent targeted closure lenses regardless of severity.
+- Fix any new verified defect found in the affected surface regardless of severity. A third independent round is allowed only for a newly introduced critical/high defect. Record the exception.
 - If the same claim fails twice, stop re-running the panel. Run a targeted diagnostic against that claim and evidence.
 
 Minor non-behavioral fixes that do not affect a finding's proof need no Round 2.
@@ -186,6 +219,7 @@ Record pre-authorized policy once: uninterrupted execution, main/branch choice, 
 - The owner executes the slice end-to-end, handles later QA fixes for that slice, and verifies DoD before proceeding.
 - No additional user approval gates between phases.
 - The implementer reports back: per-phase results, deviations, verification evidence.
+- The implementer checks each decision-manifest ID for compliance and records every deviation. A manifest never authorizes unreviewed scope.
 - Use checkpointed probes and the verification pyramid. Do not rerun a full qualification matrix to diagnose one probe.
 
 ### If the implementer reports a routing status
@@ -203,6 +237,7 @@ Record pre-authorized policy once: uninterrupted execution, main/branch choice, 
 
 - It MUST be a different sub-agent than the implementer — fresh perspective on the completed work.
 - The QA agent verifies all phases against the plan's objectives and DoD, runs commands, reads code, and returns findings.
+- Standard QA retains a fresh exhaustive whole-diff scan, independent pattern search, behavioral checks, integration checks, and authority to expand blast radius. The decision manifest is minimum coverage, not a shortcut.
 
 ### Fix QA findings
 
@@ -213,13 +248,14 @@ Record pre-authorized policy once: uninterrupted execution, main/branch choice, 
 3. Verify against the actual codebase — is the claim correct?
 4. Decide: fix, push back with reasoning, or escalate.
 
-Fix every verified finding, regardless of severity. Route fixes to the slice's implementation owner. After fixing, re-run the affected checks and then the milestone gate. Do not repeat unrelated expensive probes.
+Set every verified finding to `OPEN`. Fix every finding, regardless of severity, and record it as `REMEDIATED`. Route fixes to the slice's implementation owner. After fixing, apply the closure-depth policy, re-run affected checks, and then run the milestone gate. Do not repeat unrelated expensive probes.
 
 ### Bounded QA rounds
 
 - **Round 1:** exhaustive diff, DoD, integration, and cleanliness audit.
 - **Round 2:** verify named Round 1 finding IDs and affected regression surface only.
-- Fix any new verified defect found in that surface regardless of severity. Use targeted owner proof for low/medium closure. A third independent round is allowed only for a newly introduced critical/high regression. Record the exception.
+- Documentation/format-only remediation with unchanged proof uses targeted owner evidence. Executable or contract-affecting remediation uses two independent targeted closure lenses regardless of severity.
+- Fix any new verified defect found in that surface regardless of severity. A third independent round is allowed only for a newly introduced critical/high regression. Record the exception.
 - Evidence may be reused only when its fingerprint matches commit, diff, plan, tool version, configuration, and inputs. Otherwise rerun it.
 
 **Forbidden:** "You're absolutely right" / "Great catch" / blind implementation. State the fix, not gratitude.
@@ -231,7 +267,9 @@ This is the last output the user sees. Include:
 - Per-phase: what changed, verification evidence, pass/fail
 - QA sub-agent's original findings (all severities)
 - Fixes applied for each finding
+- Finding lifecycle table: `OPEN → REMEDIATED → CLOSED`, with closure evidence
 - Final verification results (test count, TypeScript errors, ESLint warnings)
+- Successful-command evidence summaries: command, exit code, result counts, duration, fingerprint, durable raw-receipt path, byte count, and SHA-256. Keep complete output for failures.
 
 ---
 
@@ -281,7 +319,7 @@ If a sub-agent's report doesn't carry a valid status code, ask it to commit to o
 
 ## Operational control loop
 
-At every stage boundary record elapsed time, model/tool calls, completed gates, open finding IDs, active blocker, and next action. Set an expected time/call budget before dispatch. Exceeding it triggers strategy reassessment, not an approval stop: narrow the scope, switch to targeted diagnostics, replay a checkpoint, or change the model/provider.
+At every stage boundary write machine-readable telemetry: stage, risk tier, seats dispatched, start/end timestamps, elapsed seconds, model/tool calls, expensive-command seconds, completed gates, findings by severity and lifecycle status, reused receipts, reruns, strategy changes, active blocker, and next action. Set an expected time/call budget before dispatch. Missing required telemetry returns `DONE_WITH_CONCERNS`; open findings still block completion. Exceeding budget triggers strategy reassessment, not an approval stop: narrow scope, switch to targeted diagnostics, replay a checkpoint, or change model/provider.
 
 For work lasting more than 30 minutes, send periodic status updates with current slice, elapsed time, completed evidence, blocker, and budget deviation. Never leave the user unable to distinguish progress from a stuck command.
 

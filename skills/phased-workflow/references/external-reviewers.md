@@ -9,6 +9,8 @@ Use this reference only when phased-workflow dispatches an external headless pla
 - Run external seat concurrently with internal seats.
 - Treat seat as read-only and advisory. Only planner or implementation owner applies fixes.
 - Merge every verified finding regardless of source or severity.
+- Normalize cosmetic findings to `low`; no severity exists below `low`.
+- Set every verified finding to `OPEN`. Require remediation and closure evidence before `CLOSED`.
 - Do not require consensus. Adjudicate conflicting findings against source and executable evidence.
 - Check availability once per workflow. One failed call gets no automatic retry unless failure is a transient launch error with no model turn.
 
@@ -38,7 +40,7 @@ agent --print \
 Prompt requirements:
 - Name plan/diff, base commit, review round, finding IDs when Round 2, and working directory.
 - State: do not modify product files, plan files, git state, or external systems.
-- Require every finding to include stable ID, file, line, severity, category, summary, failure scenario, and evidence.
+- Require every finding to include stable ID, file, line, severity, category, summary, failure scenario, evidence, lifecycle status, remediation, closure requirement, and closure evidence.
 - Round 1: scan full requested surface.
 - Round 2: verify named findings plus affected surface only.
 
@@ -76,3 +78,4 @@ Redirect stdin from `/dev/null` for any headless command that can otherwise wait
 3. Preserve all source labels on a shared finding.
 4. Verify each finding against code/evidence.
 5. Route every verified finding for correction regardless of severity.
+6. Preserve lifecycle `OPEN → REMEDIATED → CLOSED`; no provider can mark its own unremediated finding closed.

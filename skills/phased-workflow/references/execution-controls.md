@@ -12,6 +12,8 @@ Before each stage record:
 
 At each boundary record actual elapsed time/calls, completed gates, open finding IDs, blocker, and next action. A budget overrun triggers strategy reassessment. It does not create a new approval gate when uninterrupted execution was authorized.
 
+Write machine-readable stage telemetry with: stage, risk tier, seats, start/end timestamps, elapsed seconds, model/tool calls, expensive-command seconds, findings by severity and lifecycle status, reused receipts, reruns, strategy changes, blocker, and next action. Missing required telemetry returns `DONE_WITH_CONCERNS`; open verified findings still block completion.
+
 For work lasting more than 30 minutes, send a status update at least every 30 minutes and after any material strategy change.
 
 ## Verification pyramid
@@ -47,7 +49,20 @@ Receipt fingerprint fields:
 - Configuration and environment contract
 - Inputs/fixtures and probe ID
 
-Reuse evidence only on an exact fingerprint match. Advisory receipts stopped by a documented resource ceiling remain advisory and cannot block release.
+Reuse evidence only within the same stage owner on an exact fingerprint match. Agent prose is never evidence. Cross-stage receipts never substitute for fresh review or fresh release-blocking QA. Advisory receipts stopped by a documented resource ceiling remain advisory and cannot block release.
+
+## Durable evidence receipts
+
+Store reusable receipts under a stable workflow run directory, never an ephemeral final path.
+
+For each receipt:
+- Write raw output and metadata to a sibling staging directory.
+- Record command, exit code, start/end timestamps, byte count, fingerprint, and physical final path.
+- Generate SHA-256 hashes for every payload and verify them before publication.
+- Atomically rename the staged directory to its final path.
+- Retain the receipt through final acceptance.
+
+Before every reuse and final report, require all payloads to exist and reverify hashes plus physical path. A missing, moved, truncated, or mismatched receipt is invalid evidence. Discard the reuse claim and rerun the producer command; never repair evidence manually.
 
 ## Active-command lifecycle
 
@@ -74,13 +89,20 @@ Record approval scope once: roadmap/plan, uninterrupted execution, branch or mai
 
 ## Local skill parity
 
-Canonical local source: `${CODEX_HOME:-$HOME/.codex}/skills`.
+Canonical source: tracked `skills/` directory in the phased-workflow Git repository.
 
-Mirror these complete directories to `$HOME/.claude/skills`:
+Mirror these complete directories to both `${CODEX_HOME:-$HOME/.codex}/skills` and `$HOME/.claude/skills`:
 - `phased-workflow`
 - `phased-plan`
 - `phased-review`
 - `phased-implement`
 - `phased-qa`
 
-Run `phased-workflow/scripts/sync-local-copies.sh`. It mirrors full trees, removes stale files within those five target directories, validates every skill, and checks byte parity. Any mismatch fails the update.
+From the Git repository root, run the tracked script twice with explicit roots:
+
+```bash
+PHASED_SKILL_SOURCE="$PWD/skills" PHASED_SKILL_TARGET="${CODEX_HOME:-$HOME/.codex}/skills" skills/phased-workflow/scripts/sync-local-copies.sh
+PHASED_SKILL_SOURCE="$PWD/skills" PHASED_SKILL_TARGET="$HOME/.claude/skills" skills/phased-workflow/scripts/sync-local-copies.sh
+```
+
+The script mirrors full trees, removes stale files only within the five named target directories, validates source and target skills, and checks byte parity. Any mismatch fails the update. Never reverse-sync a mirror into Git.

@@ -5,7 +5,7 @@ description: "Review phased plans against the live codebase using risk-scaled pr
 
 # Phased Review
 
-**Suite contract:** 4.0.0
+**Suite contract:** 4.1.0
 
 ## Overview
 
@@ -30,6 +30,7 @@ Trigger phrases: `phased-review`, `phased review`, `/prv`, `prv:`
 3. Note assumptions and dependencies between phases.
 4. Read the dispatch's `review-round` value. Default to `1`.
 5. For Round 2, load the Round 1 finding IDs and their required closure evidence.
+6. Load the decision and evidence manifest. Independently validate every manifest row against live code; planner evidence is a claim, not a trust boundary.
 
 ### Step 1.5 — Restate the plan's intent
 
@@ -51,8 +52,13 @@ The dispatch may name a `lens`. If it does, lead with that stance (still run the
 
 - **Round 1:** audit the entire plan and report every verified finding, regardless of severity.
 - **Round 2:** verify named Round 1 finding IDs, changed plan sections, and affected evidence only. Do not restart whole-plan review.
-- Report and fix any new verified defect in that affected surface regardless of severity. Use targeted planner proof for low/medium closure. Mark a new critical/high issue `ROUND2-REGRESSION`.
+- Report and fix any new verified defect in that affected surface regardless of severity. Apply closure depth based on changed surface, not severity. Mark a new critical/high issue `ROUND2-REGRESSION`.
 - Never request a third open-ended review. A third independent pass is limited to critical/high `ROUND2-REGRESSION` closure.
+
+Closure policy:
+- Documentation/format-only remediation with unchanged executable proof may close from targeted owner evidence.
+- Executable behavior, test assertions, shared interfaces, public contracts, acceptance evidence, integration paths, and high-risk surfaces require two independent targeted closure lenses regardless of severity.
+- Record every verified finding as `OPEN`, then `REMEDIATED`, then `CLOSED`. Zero open findings required for readiness.
 
 ### Step 2 — Read the codebase (before judging)
 
@@ -216,9 +222,9 @@ For every issue found:
 3. **Plan change required** — exact edit to the plan text
 4. **Code change guidance** — if the fix requires different implementation code, provide exact file paths and patch direction
 
-Do not leave any issue unaddressed. Do not omit low-severity findings — they compound.
+Do not leave any issue unaddressed. Do not omit low-severity findings — they compound. Every verified finding requires remediation and closure evidence before readiness.
 
-Assign stable finding IDs in Round 1. Round 2 reports each ID as `CLOSED` or `OPEN` with evidence. Severity does not change whether a verified finding must be fixed.
+Assign stable finding IDs in Round 1. Record lifecycle `OPEN → REMEDIATED → CLOSED`. Round 2 reports each ID with remediation and closure evidence. Severity does not change whether a verified finding must be fixed.
 
 ---
 
@@ -262,6 +268,7 @@ Assign stable finding IDs in Round 1. Round 2 reports each ID as `CLOSED` or `OP
 - Required changes table (severity, phase, change) — no issue omitted
 - Updated DoD additions the plan should include
 - Review round and named-finding closure table
+- Machine-readable stage telemetry required by `phased-workflow/references/execution-controls.md`
 
 ---
 

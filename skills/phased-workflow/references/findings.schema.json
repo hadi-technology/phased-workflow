@@ -15,18 +15,41 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "source", "file", "line", "severity", "category", "summary", "failure_scenario", "evidence"],
+        "required": ["id", "source", "file", "line", "severity", "category", "summary", "failure_scenario", "evidence", "lifecycle", "closure_requirement"],
         "properties": {
           "id": {"type": "string"},
           "source": {"type": "string"},
           "file": {"type": "string"},
           "line": {"type": "integer", "minimum": 0},
-          "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "nit"]},
+          "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
           "category": {"type": "string"},
           "summary": {"type": "string"},
           "failure_scenario": {"type": "string"},
-          "evidence": {"type": "string"}
-        }
+          "evidence": {"type": "string"},
+          "lifecycle": {"type": "string", "enum": ["OPEN", "REMEDIATED", "CLOSED"]},
+          "remediation": {"type": ["string", "null"]},
+          "closure_requirement": {"type": "string", "enum": ["owner-proof", "two-independent-lenses"]},
+          "closure_evidence": {"type": ["string", "null"]}
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"lifecycle": {"const": "REMEDIATED"}}},
+            "then": {
+              "required": ["remediation"],
+              "properties": {"remediation": {"type": "string", "minLength": 1}}
+            }
+          },
+          {
+            "if": {"properties": {"lifecycle": {"const": "CLOSED"}}},
+            "then": {
+              "required": ["remediation", "closure_evidence"],
+              "properties": {
+                "remediation": {"type": "string", "minLength": 1},
+                "closure_evidence": {"type": "string", "minLength": 1}
+              }
+            }
+          }
+        ]
       }
     }
   }

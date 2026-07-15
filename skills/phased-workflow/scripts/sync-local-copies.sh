@@ -7,10 +7,17 @@ validator="${SKILL_VALIDATOR:-${CODEX_HOME:-$HOME/.codex}/skills/.system/skill-c
 validator_python="${SKILL_VALIDATOR_PYTHON:-}"
 skills=(phased-workflow phased-plan phased-review phased-implement phased-qa)
 
-if [[ "$source_root" == "$target_root" ]]; then
-  echo "source and target roots must differ" >&2
-  exit 2
-fi
+mkdir -p "$target_root"
+source_root="$(cd "$source_root" && pwd -P)"
+target_root="$(cd "$target_root" && pwd -P)"
+
+case "$source_root/" in "$target_root/"*) echo "source cannot be inside target" >&2; exit 2;; esac
+case "$target_root/" in "$source_root/"*) echo "target cannot be inside source" >&2; exit 2;; esac
+[[ "$source_root" != "$target_root" ]] || { echo "source and target roots must differ" >&2; exit 2; }
+
+suite_validator="$source_root/phased-workflow/scripts/validate-suite.sh"
+[[ -x "$suite_validator" ]] || { echo "missing executable $suite_validator" >&2; exit 3; }
+"$suite_validator" "$source_root"
 
 for skill in "${skills[@]}"; do
   source_dir="$source_root/$skill"
